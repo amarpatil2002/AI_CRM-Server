@@ -15,11 +15,11 @@ const generateAccessToken = (payload) => {
   });
 };
 
-const generateRefreshToken = (payload) => {
-  return jwt.sign(payload, process.env.JWT_REFRESH_SECRET, {
-    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || "7d",
-  });
-};
+// const generateRefreshToken = (payload) => {
+//   return jwt.sign(payload, process.env.JWT_REFRESH_SECRET, {
+//     expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || "7d",
+//   });
+// };
 
 const hashToken = async (token) => {
   const salt = await bcrypt.genSalt(10);

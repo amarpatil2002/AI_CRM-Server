@@ -1,4 +1,3 @@
-```gitignore
 # =========================
 # Dependencies
 # =========================
@@ -83,4 +82,4 @@ docker-compose.override.yml
 # Misc
 # =========================
 .vercel
-```
+
