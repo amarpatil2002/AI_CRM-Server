@@ -1,0 +1,24 @@
+export const USER_STATUS = {
+  ACTIVE: "ACTIVE",
+  INACTIVE: "INACTIVE",
+  SUSPENDED: "SUSPENDED",
+  DELETED: "DELETED",
+};
+
+export const ACCESS_SCOPE = {
+  OWN: "OWN",
+  TEAM: "TEAM",
+  ALL: "ALL",
+};
+
+export const ROLE_TYPES = {
+  ORG_ADMIN: "ORG_ADMIN",
+  SALES_MANAGER: "SALES_MANAGER",
+  SALES_REP: "SALES_REP",
+  SUPPORT: "SUPPORT",
+};
+
+export const TOKEN_TYPES = {
+  ACCESS: "ACCESS",
+  REFRESH: "REFRESH",
+};

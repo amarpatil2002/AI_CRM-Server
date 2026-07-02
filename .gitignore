@@ -1,0 +1,86 @@
+```gitignore
+# =========================
+# Dependencies
+# =========================
+node_modules/
+
+# =========================
+# Environment files
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# Runtime / temp files
+# =========================
+tmp/
+temp/
+.cache/
+.pnpm-store/
+*.pid
+*.seed
+*.pid.lock
+
+# =========================
+# Coverage / test output
+# =========================
+coverage/
+.nyc_output/
+
+# =========================
+# Build / production output
+# =========================
+dist/
+build/
+out/
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Editor / IDE
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Local uploads / generated files
+# Keep this only if your app stores files locally
+# =========================
+uploads/
+public/uploads/
+storage/
+
+# =========================
+# Optional database files (if ever used locally)
+# =========================
+*.sqlite
+*.sqlite3
+*.db
+
+# =========================
+# Docker / local infra overrides
+# =========================
+docker-compose.override.yml
+
+# =========================
+# Misc
+# =========================
+.vercel
+```
