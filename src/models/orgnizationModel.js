@@ -15,7 +15,6 @@ const organizationSchema = new Schema(
     slug: {
       type: String,
       required: true,
-      unique: true,
       lowercase: true,
       trim: true,
     },
@@ -28,6 +27,7 @@ const organizationSchema = new Schema(
     website: {
       type: String,
       trim: true,
+      default: null,
     },
 
     email: {
@@ -41,39 +41,27 @@ const organizationSchema = new Schema(
     phone: {
       type: String,
       trim: true,
+      default: null,
     },
 
     industry: {
       type: String,
       trim: true,
+      default: null,
     },
 
     description: {
       type: String,
       maxlength: 500,
+      default: null,
     },
 
     address: {
-      street: {
-        type: String,
-        trim: true,
-      },
-      city: {
-        type: String,
-        trim: true,
-      },
-      state: {
-        type: String,
-        trim: true,
-      },
-      country: {
-        type: String,
-        trim: true,
-      },
-      zipCode: {
-        type: String,
-        trim: true,
-      },
+      street: { type: String, trim: true, default: null },
+      city: { type: String, trim: true, default: null },
+      state: { type: String, trim: true, default: null },
+      country: { type: String, trim: true, default: null },
+      zipCode: { type: String, trim: true, default: null },
     },
 
     settings: {
@@ -115,7 +103,7 @@ const organizationSchema = new Schema(
 
       maxStorage: {
         type: Number,
-        default: 1024, // MB
+        default: 1024,
       },
     },
 
@@ -123,7 +111,6 @@ const organizationSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true,
     },
 
     status: {
@@ -135,6 +122,7 @@ const organizationSchema = new Schema(
     isDeleted: {
       type: Boolean,
       default: false,
+      index: true,
     },
 
     deletedAt: {
@@ -150,22 +138,11 @@ const organizationSchema = new Schema(
   },
 );
 
-/* -------------------- INDEXES -------------------- */
-
 organizationSchema.index({ slug: 1 }, { unique: true });
 organizationSchema.index({ email: 1 });
 organizationSchema.index({ owner: 1 });
 organizationSchema.index({ status: 1 });
 organizationSchema.index({ createdAt: -1 });
-
-/* -------------------- QUERY MIDDLEWARE -------------------- */
-
-organizationSchema.pre(/^find/, function (next) {
-  this.where({ isDeleted: false });
-  next();
-});
-
-/* -------------------- INSTANCE METHODS -------------------- */
 
 organizationSchema.methods.softDelete = async function () {
   this.isDeleted = true;
@@ -173,10 +150,8 @@ organizationSchema.methods.softDelete = async function () {
   return this.save();
 };
 
-/* -------------------- VIRTUAL -------------------- */
-
 organizationSchema.virtual("isPremium").get(function () {
-  return this.subscription.plan !== "FREE";
+  return this.subscription?.plan !== "FREE";
 });
 
 const Organization = mongoose.model("Organization", organizationSchema);

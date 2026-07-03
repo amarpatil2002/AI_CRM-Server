@@ -1,8 +1,8 @@
-import ApiError from "../utils/ApiError.js";
+import ApiError from "../utils/apiError.js";
 
 const validate = (schema) => async (req, res, next) => {
   try {
-    const validatedData = await schema.validate(
+    const validated = await schema.validate(
       {
         body: req.body,
         params: req.params,
@@ -14,15 +14,26 @@ const validate = (schema) => async (req, res, next) => {
       },
     );
 
-    req.body = validatedData.body || req.body;
-    req.params = validatedData.params || req.params;
-    req.query = validatedData.query || req.query;
+    req.validated = validated;
 
     next();
   } catch (error) {
-    return next(
-      new ApiError(400, "Validation failed", error.errors || [error.message]),
-    );
+    if (error.name === "ValidationError") {
+      return next(
+        new ApiError(
+          400,
+          "Validation failed",
+          error.inner?.length
+            ? error.inner.map((err) => ({
+                field: err.path,
+                message: err.message,
+              }))
+            : [{ field: error.path, message: error.message }],
+        ),
+      );
+    }
+
+    next(error);
   }
 };
 

@@ -5,6 +5,7 @@ import { sendEmail } from "../../../service/emailService.js";
 import mongoose from "mongoose";
 import User from "../../../models/userModel.js";
 import Organization from "../../../models/orgnizationModel.js";
+import ApiError from "../../../utils/apiError.js";
 
 /* -------------------------------------------------------------------------- */
 /*                               HELPER FUNCTIONS                             */
@@ -92,7 +93,7 @@ const generateOrganizationSlug = async (organizationName, session) => {
  * Use this for initial signup
  */
 
-export const register = async (payload) => {
+export const registerUser = async (payload) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -100,14 +101,12 @@ export const register = async (payload) => {
     let { firstName, lastName, email, password, organizationName, phone } =
       payload;
 
-    // 1. Normalize input
     firstName = firstName?.trim();
     lastName = lastName?.trim();
     email = email?.trim().toLowerCase();
     organizationName = organizationName?.trim();
     phone = phone?.trim();
 
-    // 2. Basic validation
     if (!firstName || !lastName || !email || !password || !organizationName) {
       throw new ApiError(400, "All required fields must be provided");
     }
@@ -116,17 +115,15 @@ export const register = async (payload) => {
       throw new ApiError(400, "Password must be at least 8 characters long");
     }
 
-    // 3. Check existing user
     const existingUser = await User.findOne({ email }).session(session);
+
     if (existingUser) {
       throw new ApiError(409, "User already exists with this email");
     }
 
-    // 4. Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // 5. Create user first (organizationId null initially)
-    const createdUsers = await User.create(
+    const [user] = await User.create(
       [
         {
           firstName,
@@ -135,7 +132,7 @@ export const register = async (payload) => {
           password: hashedPassword,
           phone,
           organizationId: null,
-          role: "owner", // if role is enum string
+          role: "owner",
           isEmailVerified: false,
           isActive: true,
           authProvider: "local",
@@ -144,19 +141,15 @@ export const register = async (payload) => {
       { session },
     );
 
-    const user = createdUsers[0];
-
-    // 6. Generate unique slug
     const slug = await generateOrganizationSlug(organizationName, session);
 
-    // 7. Create organization with owner
-    const createdOrganizations = await Organization.create(
+    const [organization] = await Organization.create(
       [
         {
           name: organizationName,
           slug,
           owner: user._id,
-          email, // if your org schema requires email
+          email,
           status: "ACTIVE",
           subscription: {
             plan: "FREE",
@@ -167,21 +160,18 @@ export const register = async (payload) => {
       { session },
     );
 
-    const organization = createdOrganizations[0];
-
-    // 8. Update user with organizationId
     user.organizationId = organization._id;
-    await user.save({ session });
 
-    // 9. Generate auth tokens
     const { accessToken, refreshToken, hashedRefreshToken } =
       await generateAuthTokens(user);
 
-    // 10. Save hashed refresh token
     user.refreshToken = hashedRefreshToken;
-    await user.save({ session });
 
-    // 11. Commit transaction
+    await user.save({
+      session,
+      validateBeforeSave: false,
+    });
+
     await session.commitTransaction();
     session.endSession();
 
@@ -198,11 +188,13 @@ export const register = async (payload) => {
     await session.abortTransaction();
     session.endSession();
 
-    // Duplicate key safeguard
-    if (error.code === 11000) {
+    console.log(error);
+
+    if (error?.code === 11000) {
       if (error.keyPattern?.email) {
         throw new ApiError(409, "User already exists with this email");
       }
+
       if (error.keyPattern?.slug) {
         throw new ApiError(409, "Organization slug already exists");
       }

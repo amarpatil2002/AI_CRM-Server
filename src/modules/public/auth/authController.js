@@ -1,59 +1,125 @@
-import ApiResponse from "../../../utils/ApiResponse.js";
+import ApiResponse from "../../../utils/apiResponse.js";
 import asyncHandler from "../../../utils/asyncHandler.js";
 import * as authService from "./authService.js";
 
+const getValidatedBody = (req) => req.validated?.body || req.body;
+const getValidatedParams = (req) => req.validated?.params || req.params;
+const getValidatedQuery = (req) => req.validated?.query || req.query;
+const getUserId = (req) => req.user?._id || req.user?.id || req.user;
+
 export const register = asyncHandler(async (req, res) => {
-  const result = await authService.registerUser(req.body);
+  const body = getValidatedBody(req);
+
+  const result = await authService.registerUser(body);
 
   return res
     .status(201)
-    .json(new ApiResponse(201, result, "User registered successfully"));
+    .json(
+      new ApiResponse(
+        201,
+        result,
+        result.message || "User registered successfully",
+      ),
+    );
 });
 
 export const login = asyncHandler(async (req, res) => {
-  const result = await authService.loginUser(req.body);
+  const body = getValidatedBody(req);
 
-  return res.status(200).json(new ApiResponse(200, result, "Login successful"));
+  const result = await authService.loginUser(body);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, result, result.message || "Login successful"));
 });
 
 export const getMe = asyncHandler(async (req, res) => {
-  const result = await authService.getCurrentUser(req.user);
+  const userId = getUserId(req);
 
-  return res
-    .status(200)
-    .json(new ApiResponse(200, result, "Current user fetched successfully"));
-});
-
-export const logout = asyncHandler(async (req, res) => {
-  const result = await authService.logoutUser(req.user);
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, result, "Logout successful"));
-});
-
-export const forgotPassword = asyncHandler(async (req, res) => {
-  const result = await authService.forgotPassword(req.body);
+  const result = await authService.getCurrentUser(userId);
 
   return res
     .status(200)
     .json(
-      new ApiResponse(200, result, "Password reset link sent successfully"),
+      new ApiResponse(
+        200,
+        result,
+        result.message || "Current user fetched successfully",
+      ),
+    );
+});
+
+export const logout = asyncHandler(async (req, res) => {
+  const userId = getUserId(req);
+
+  const result = await authService.logoutUser(userId);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, result, result.message || "Logout successful"));
+});
+
+export const forgotPassword = asyncHandler(async (req, res) => {
+  const body = getValidatedBody(req);
+
+  const result = await authService.forgotPassword(body);
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        result,
+        result.message || "Password reset link sent successfully",
+      ),
     );
 });
 
 export const resetPassword = asyncHandler(async (req, res) => {
-  const result = await authService.resetPassword(req.body);
+  const body = getValidatedBody(req);
+
+  const result = await authService.resetPassword(body);
 
   return res
     .status(200)
-    .json(new ApiResponse(200, result, "Password reset successfully"));
+    .json(
+      new ApiResponse(
+        200,
+        result,
+        result.message || "Password reset successfully",
+      ),
+    );
 });
 
 export const changePassword = asyncHandler(async (req, res) => {
-  const result = await authService.changePassword(req.user, req.body);
+  const userId = getUserId(req);
+  const body = getValidatedBody(req);
+
+  const result = await authService.changePassword(userId, body);
 
   return res
     .status(200)
-    .json(new ApiResponse(200, result, "Password changed successfully"));
+    .json(
+      new ApiResponse(
+        200,
+        result,
+        result.message || "Password changed successfully",
+      ),
+    );
+});
+
+export const refreshAccessToken = asyncHandler(async (req, res) => {
+  const body = getValidatedBody(req);
+
+  const result = await authService.refreshAccessToken(body);
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        result,
+        result.message || "Access token refreshed successfully",
+      ),
+    );
 });

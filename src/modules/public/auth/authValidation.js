@@ -5,14 +5,23 @@ const PASSWORD_REGEX =
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/;
 
+const emptyObjectSchema = yup.object({}).default({});
+
 export const registerSchema = yup.object({
   body: yup.object({
-    fullName: yup
+    firstName: yup
       .string()
       .trim()
-      .min(2, "Full name must be at least 2 characters")
-      .max(100, "Full name cannot exceed 100 characters")
-      .required("Full name is required"),
+      .min(2, "First name must be at least 2 characters")
+      .max(50, "First name cannot exceed 50 characters")
+      .required("First name is required"),
+
+    lastName: yup
+      .string()
+      .trim()
+      .min(2, "Last name must be at least 2 characters")
+      .max(50, "Last name cannot exceed 50 characters")
+      .required("Last name is required"),
 
     email: yup
       .string()
@@ -35,7 +44,11 @@ export const registerSchema = yup.object({
       .min(2, "Organization name must be at least 2 characters")
       .max(120, "Organization name cannot exceed 120 characters")
       .required("Organization name is required"),
+
+    phone: yup.string().trim().nullable().notRequired(),
   }),
+  params: emptyObjectSchema,
+  query: emptyObjectSchema,
 });
 
 export const loginSchema = yup.object({
@@ -49,6 +62,8 @@ export const loginSchema = yup.object({
 
     password: yup.string().required("Password is required"),
   }),
+  params: emptyObjectSchema,
+  query: emptyObjectSchema,
 });
 
 export const forgotPasswordSchema = yup.object({
@@ -60,6 +75,8 @@ export const forgotPasswordSchema = yup.object({
       .email("Please provide a valid email address")
       .required("Email is required"),
   }),
+  params: emptyObjectSchema,
+  query: emptyObjectSchema,
 });
 
 export const resetPasswordSchema = yup.object({
@@ -74,6 +91,8 @@ export const resetPasswordSchema = yup.object({
         "New password must be 8-64 characters and include uppercase, lowercase, number, and special character",
       ),
   }),
+  params: emptyObjectSchema,
+  query: emptyObjectSchema,
 });
 
 export const changePasswordSchema = yup.object({
@@ -92,16 +111,23 @@ export const changePasswordSchema = yup.object({
         "New password must be different from current password",
       ),
   }),
+  params: emptyObjectSchema,
+  query: emptyObjectSchema,
 });
 
 export const authMeSchema = yup.object({
-  params: yup.object({}),
-  query: yup.object({}),
-  body: yup.object({}),
+  body: emptyObjectSchema,
+  params: emptyObjectSchema,
+  query: emptyObjectSchema,
 });
 
 export const userIdParamSchema = yup.object({
   params: yup.object({
-    userId: yup.string().matches(objectIdRegex, "Invalid user id"),
+    userId: yup
+      .string()
+      .required("User id is required")
+      .matches(objectIdRegex, "Invalid user id"),
   }),
+  body: emptyObjectSchema,
+  query: emptyObjectSchema,
 });

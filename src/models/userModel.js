@@ -2,33 +2,43 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import { USER_STATUS } from "../utils/enum.js";
 
-const userSchema = new mongoose.Schema(
+const { Schema } = mongoose;
+
+const userSchema = new Schema(
   {
     organizationId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: "Organization",
-      required: true,
+      default: null,
       index: true,
     },
 
     roleId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: "Role",
-      required: true,
+      default: null,
       index: true,
     },
 
     managerId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
       index: true,
     },
 
-    fullName: {
+    firstName: {
       type: String,
       required: true,
       trim: true,
+      maxlength: 50,
+    },
+
+    lastName: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 50,
     },
 
     email: {
@@ -36,8 +46,12 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
       lowercase: true,
-      unique: true,
-      index: true,
+    },
+
+    phone: {
+      type: String,
+      trim: true,
+      default: null,
     },
 
     password: {
@@ -46,9 +60,64 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
 
+    refreshToken: {
+      type: String,
+      select: false,
+      default: null,
+    },
+
+    passwordResetToken: {
+      type: String,
+      select: false,
+      default: null,
+    },
+
+    passwordResetExpires: {
+      type: Date,
+      default: null,
+    },
+
+    emailVerificationToken: {
+      type: String,
+      select: false,
+      default: null,
+    },
+
+    emailVerificationExpires: {
+      type: Date,
+      default: null,
+    },
+
     isEmailVerified: {
       type: Boolean,
       default: false,
+      index: true,
+    },
+
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
+      index: true,
+    },
+
+    avatar: {
+      type: String,
+      default: null,
+    },
+
+    jobTitle: {
+      type: String,
+      trim: true,
+      default: null,
+      maxlength: 100,
+    },
+
+    department: {
+      type: String,
+      trim: true,
+      default: null,
+      maxlength: 100,
     },
 
     status: {
@@ -68,15 +137,44 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    passwordChangedAt: {
+      type: Date,
+      default: null,
+    },
+
+    invitedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    invitedAt: {
+      type: Date,
+      default: null,
+    },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    versionKey: false,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  },
 );
 
-userSchema.methods.comparePassword = async function comparePassword(
-  candidatePassword,
-) {
+userSchema.virtual("fullName").get(function () {
+  return `${this.firstName || ""} ${this.lastName || ""}`.trim();
+});
+
+userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
+
+userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ organizationId: 1, roleId: 1 });
+userSchema.index({ organizationId: 1, managerId: 1 });
+userSchema.index({ organizationId: 1, status: 1 });
+userSchema.index({ organizationId: 1, isActive: 1 });
 
 const User = mongoose.model("User", userSchema);
 
