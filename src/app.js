@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import errorMiddleware from "./middleware/errorMiddleware.js";
 import routes from "./routes/index.js";
 
@@ -12,6 +13,7 @@ app.use(
   }),
 );
 
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

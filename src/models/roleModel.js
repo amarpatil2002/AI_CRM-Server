@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { ACCESS_SCOPE } from "../utils/enums.js";
+import { ACCESS_SCOPE } from "../utils/accessScope.js";
 
 const roleScopeSchema = new mongoose.Schema(
   {

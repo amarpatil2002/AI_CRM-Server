@@ -2,11 +2,12 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { sendEmail } from "../../../service/emailService.js";
-import { verifyEmailTemplate } from "../../../utils/emailTemplates.js";
+import { verifyEmailOtpTemplate } from "../../../utils/emailTemplates.js";
 import mongoose from "mongoose";
 import User from "../../../models/userModel.js";
 import Organization from "../../../models/orgnizationModel.js";
 import ApiError from "../../../utils/apiError.js";
+import { createDefaultRolesForOrganization } from "../../../helpers/createDefaultRolesForOrganization.js";
 
 /* -------------------------------------------------------------------------- */
 /*                               HELPER FUNCTIONS                             */
@@ -85,19 +86,44 @@ const generateOrganizationSlug = async (organizationName, session) => {
   return slug;
 };
 
-const EMAIL_VERIFY_TOKEN_EXPIRES_MINUTES =
-  Number(process.env.EMAIL_VERIFY_TOKEN_EXPIRES_MINUTES) || 1440;
+const EMAIL_OTP_EXPIRES_MINUTES =
+  Number(process.env.EMAIL_OTP_EXPIRES_MINUTES) || 10;
 
-const RESEND_VERIFICATION_COOLDOWN_SECONDS =
-  Number(process.env.RESEND_VERIFICATION_COOLDOWN_SECONDS) || 60;
+const EMAIL_OTP_RESEND_COOLDOWN_SECONDS =
+  Number(process.env.EMAIL_OTP_RESEND_COOLDOWN_SECONDS) || 60;
 
-/**
- * Normalize email input for consistent lookup/storage.
- */
+const EMAIL_OTP_MAX_ATTEMPTS = Number(process.env.EMAIL_OTP_MAX_ATTEMPTS) || 5;
+
 const normalizeEmail = (email) =>
   String(email || "")
     .trim()
     .toLowerCase();
+
+const generateEmailOtp = () => {
+  return String(Math.floor(100000 + Math.random() * 900000));
+};
+
+const hashOtp = (otp) => {
+  return crypto.createHash("sha256").update(String(otp)).digest("hex");
+};
+
+const getEmailOtpExpiryDate = () => {
+  return new Date(Date.now() + EMAIL_OTP_EXPIRES_MINUTES * 60 * 1000);
+};
+
+const sendVerificationOtpEmail = async ({ email, firstName, otp }) => {
+  const { subject, html, text } = verifyEmailOtpTemplate({
+    name: firstName,
+    otp,
+  });
+
+  await sendEmail({
+    to: email,
+    subject,
+    html,
+    text,
+  });
+};
 
 /* -------------------------------------------------------------------------- */
 /*                               AUTH SERVICES                                */
@@ -118,7 +144,7 @@ export const registerUser = async (payload) => {
 
     firstName = firstName?.trim();
     lastName = lastName?.trim();
-    email = email?.trim().toLowerCase();
+    email = normalizeEmail(email);
     organizationName = organizationName?.trim();
     phone = phone?.trim();
 
@@ -138,26 +164,7 @@ export const registerUser = async (payload) => {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // 1) Create user first
-    const [user] = await User.create(
-      [
-        {
-          firstName,
-          lastName,
-          email,
-          password: hashedPassword,
-          phone,
-          organizationId: null,
-          roleId: null, // assign later when role system is added
-          isEmailVerified: false,
-          isActive: true,
-          authProvider: "local",
-        },
-      ],
-      { session },
-    );
-
-    // 2) Create organization
+    // Create organization first
     const slug = await generateOrganizationSlug(organizationName, session);
 
     const [organization] = await Organization.create(
@@ -165,7 +172,6 @@ export const registerUser = async (payload) => {
         {
           name: organizationName,
           slug,
-          owner: user._id,
           email,
           status: "ACTIVE",
           subscription: {
@@ -177,52 +183,73 @@ export const registerUser = async (payload) => {
       { session },
     );
 
-    // 3) Link organization to user
-    user.organizationId = organization._id;
-
-    // 4) Generate email verification token
-    const rawVerifyToken = crypto.randomBytes(32).toString("hex");
-
-    const hashedVerifyToken = crypto
-      .createHash("sha256")
-      .update(rawVerifyToken)
-      .digest("hex");
-
-    user.emailVerificationToken = hashedVerifyToken;
-    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-    await user.save({
+    // Create default roles for this organization
+    const { ownerRole } = await createDefaultRolesForOrganization(
+      organization._id,
       session,
-      validateBeforeSave: false,
-    });
+    );
 
-    // 5) Commit DB transaction first
+    if (!ownerRole) {
+      throw new ApiError(500, "Owner role could not be created");
+    }
+
+    // Generate email OTP
+    const rawOtp = generateEmailOtp();
+    const hashedOtp = hashOtp(rawOtp);
+
+    // Create first user as OWNER of organization
+    const [user] = await User.create(
+      [
+        {
+          firstName,
+          lastName,
+          email,
+          password: hashedPassword,
+          phone,
+          organizationId: organization._id,
+          roleId: ownerRole._id,
+          isEmailVerified: false,
+          isActive: true,
+          authProvider: "local",
+          emailVerificationOtp: hashedOtp,
+          emailVerificationOtpExpires: getEmailOtpExpiryDate(),
+          emailVerificationOtpAttempts: 0,
+          lastEmailVerificationOtpSentAt: new Date(),
+        },
+      ],
+      { session },
+    );
+
+    // Update organization owner
+    organization.owner = user._id;
+    await organization.save({ session });
+
     await session.commitTransaction();
     session.endSession();
 
-    // 6) Send verification email AFTER commit
-    const verifyUrl = `${process.env.CLIENT_URL}/verify-email?token=${rawVerifyToken}`;
-
-    const { subject, html } = verifyEmailTemplate({
-      name: user.firstName,
-      verifyUrl,
-    });
-
     try {
-      await sendEmail({
-        to: user.email,
-        subject,
-        html,
+      await sendVerificationOtpEmail({
+        email: user.email,
+        firstName: user.firstName,
+        otp: rawOtp,
       });
     } catch (emailError) {
-      // account is created successfully, but email failed
-      // don't rollback DB now because transaction already committed
-      console.error("Verification email send failed:", emailError.message);
+      console.error("Verification OTP send failed:", emailError.message);
     }
 
     return {
-      message: "Registration successful. Please verify your email to continue.",
-      user: sanitizeUser(user),
+      message:
+        "Registration successful. Please verify your email using the OTP sent to your inbox.",
+      requiresEmailVerification: true,
+      user: {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        isEmailVerified: user.isEmailVerified,
+        organizationId: user.organizationId,
+        roleId: user.roleId,
+      },
       organization: {
         _id: organization._id,
         name: organization.name,
@@ -251,71 +278,104 @@ export const registerUser = async (payload) => {
   }
 };
 
-export const verifyEmail = async ({ token }) => {
-  if (!token || typeof token !== "string") {
-    throw new ApiError(400, "Verification token is required");
-  }
+export const verifyEmailOtp = async ({ email, otp }) => {
+  try {
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedOtp = String(otp || "").trim();
 
-  const hashedToken = hashToken(token);
+    if (!normalizedEmail || !normalizedOtp) {
+      throw new ApiError(400, "Email and OTP are required");
+    }
 
-  const user = await User.findOne({
-    emailVerificationToken: hashedToken,
-    emailVerificationExpires: { $gt: new Date() },
-  }).select(
-    "+emailVerificationToken +emailVerificationExpires email firstName lastName isEmailVerified emailVerifiedAt",
-  );
+    const user = await User.findOne({ email: normalizedEmail }).select(
+      "+emailVerificationOtp +emailVerificationOtpExpires +emailVerificationOtpAttempts email firstName lastName isEmailVerified emailVerifiedAt",
+    );
 
-  if (!user) {
-    throw new ApiError(400, "Invalid or expired verification token");
-  }
+    if (!user) {
+      throw new ApiError(400, "Invalid email or OTP");
+    }
 
-  // Optional extra guard
-  if (user.isEmailVerified) {
+    if (user.isEmailVerified) {
+      return {
+        message: "Email is already verified",
+        user: {
+          id: user._id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          isEmailVerified: true,
+          emailVerifiedAt: user.emailVerifiedAt || null,
+        },
+      };
+    }
+
+    if (!user.emailVerificationOtp || !user.emailVerificationOtpExpires) {
+      throw new ApiError(400, "Invalid email or OTP");
+    }
+
+    if (user.emailVerificationOtpExpires.getTime() < Date.now()) {
+      throw new ApiError(400, "OTP has expired. Please request a new OTP.");
+    }
+
+    if (user.emailVerificationOtpAttempts >= EMAIL_OTP_MAX_ATTEMPTS) {
+      throw new ApiError(
+        429,
+        "Maximum OTP verification attempts exceeded. Please request a new OTP.",
+      );
+    }
+
+    const hashedOtp = hashOtp(normalizedOtp);
+
+    if (hashedOtp !== user.emailVerificationOtp) {
+      user.emailVerificationOtpAttempts += 1;
+      await user.save({ validateBeforeSave: false });
+
+      const remainingAttempts =
+        EMAIL_OTP_MAX_ATTEMPTS - user.emailVerificationOtpAttempts;
+
+      throw new ApiError(
+        400,
+        remainingAttempts > 0
+          ? `Invalid OTP. ${remainingAttempts} attempt(s) remaining.`
+          : "Maximum OTP verification attempts exceeded. Please request a new OTP.",
+      );
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerifiedAt = new Date();
+    user.emailVerificationOtp = null;
+    user.emailVerificationOtpExpires = null;
+    user.emailVerificationOtpAttempts = 0;
+
+    await user.save({ validateBeforeSave: false });
+
     return {
-      message: "Email is already verified",
+      message: "Email verified successfully",
       user: {
         id: user._id,
+        email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        email: user.email,
         isEmailVerified: true,
-        emailVerifiedAt: user.emailVerifiedAt || null,
+        emailVerifiedAt: user.emailVerifiedAt,
       },
     };
+  } catch (error) {
+    console.error("verifyEmailOtp service failed", {
+      email,
+      error: error.message,
+      statusCode: error.statusCode || 500,
+    });
+
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    throw new ApiError(500, "Failed to verify email OTP");
   }
-
-  user.isEmailVerified = true;
-  user.emailVerifiedAt = new Date();
-
-  // Invalidate token so it cannot be reused
-  user.emailVerificationToken = null;
-  user.emailVerificationExpires = null;
-
-  await user.save();
-
-  return {
-    message: "Email verified successfully",
-    user: {
-      id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      isEmailVerified: user.isEmailVerified,
-      emailVerifiedAt: user.emailVerifiedAt,
-    },
-  };
 };
 
-/**
- * Resend verification email.
- *
- * Security posture:
- * - Return a generic success message even if user doesn't exist
- * - Return the same generic message if email is already verified
- *   This reduces account enumeration risk.
- */
-
-export const resendVerificationEmail = async ({ email }) => {
+export const resendEmailVerificationOtp = async ({ email }) => {
   const normalizedEmail = normalizeEmail(email);
 
   if (!normalizedEmail) {
@@ -323,13 +383,13 @@ export const resendVerificationEmail = async ({ email }) => {
   }
 
   const genericMessage =
-    "If the account exists and is not verified, a verification email has been sent.";
+    "If the account exists and is not verified, a new OTP has been sent to the email address.";
 
   const user = await User.findOne({ email: normalizedEmail }).select(
-    "+emailVerificationToken +emailVerificationExpires email firstName isEmailVerified lastVerificationEmailSentAt verificationEmailSendCount",
+    "+emailVerificationOtp +emailVerificationOtpExpires +emailVerificationOtpAttempts email firstName isEmailVerified lastEmailVerificationOtpSentAt",
   );
 
-  // Do not reveal whether account exists
+  // Prevent account enumeration
   if (!user) {
     return {
       message: genericMessage,
@@ -338,7 +398,7 @@ export const resendVerificationEmail = async ({ email }) => {
     };
   }
 
-  // Do not reveal verified status either
+  // Don't reveal verification status
   if (user.isEmailVerified) {
     return {
       message: genericMessage,
@@ -347,55 +407,57 @@ export const resendVerificationEmail = async ({ email }) => {
     };
   }
 
-  // Cooldown to prevent abuse/spam
-  if (user.lastVerificationEmailSentAt) {
+  if (user.lastEmailVerificationOtpSentAt) {
     const secondsSinceLastSend = Math.floor(
-      (Date.now() - new Date(user.lastVerificationEmailSentAt).getTime()) /
+      (Date.now() - new Date(user.lastEmailVerificationOtpSentAt).getTime()) /
         1000,
     );
 
-    if (secondsSinceLastSend < RESEND_VERIFICATION_COOLDOWN_SECONDS) {
+    if (secondsSinceLastSend < EMAIL_OTP_RESEND_COOLDOWN_SECONDS) {
       throw new ApiError(
         429,
-        `Please wait ${RESEND_VERIFICATION_COOLDOWN_SECONDS - secondsSinceLastSend} seconds before requesting another verification email`,
+        `Please wait ${
+          EMAIL_OTP_RESEND_COOLDOWN_SECONDS - secondsSinceLastSend
+        } seconds before requesting another OTP`,
       );
     }
   }
 
-  const { rawToken, hashedToken } = generateVerificationTokenPair();
-  const expiresAt = getVerificationExpiryDate();
+  const rawOtp = generateEmailOtp();
+  const hashedOtp = hashOtp(rawOtp);
+  const expiresAt = getEmailOtpExpiryDate();
 
-  user.emailVerificationToken = hashedToken;
-  user.emailVerificationExpires = expiresAt;
-  user.lastVerificationEmailSentAt = new Date();
-  user.verificationEmailSendCount =
-    Number(user.verificationEmailSendCount || 0) + 1;
+  // keep previous values in case email sending fails
+  const previousOtp = user.emailVerificationOtp;
+  const previousOtpExpires = user.emailVerificationOtpExpires;
+  const previousOtpAttempts = user.emailVerificationOtpAttempts;
+  const previousLastSentAt = user.lastEmailVerificationOtpSentAt;
 
-  await user.save();
+  user.emailVerificationOtp = hashedOtp;
+  user.emailVerificationOtpExpires = expiresAt;
+  user.emailVerificationOtpAttempts = 0;
+  user.lastEmailVerificationOtpSentAt = new Date();
 
-  const verifyUrl = buildVerificationUrl(rawToken);
-
-  const { subject, html, text } = getVerificationEmailTemplate({
-    firstName: user.firstName,
-    verifyUrl,
-  });
+  await user.save({ validateBeforeSave: false });
 
   try {
-    await sendMail({
-      to: user.email,
-      subject,
-      html,
-      text,
+    await sendVerificationOtpEmail({
+      email: user.email,
+      firstName: user.firstName,
+      otp: rawOtp,
     });
   } catch (error) {
-    // Roll back verification token fields if email sending fails
-    user.emailVerificationToken = null;
-    user.emailVerificationExpires = null;
-    await user.save();
+    // rollback OTP state if email sending fails
+    user.emailVerificationOtp = previousOtp;
+    user.emailVerificationOtpExpires = previousOtpExpires;
+    user.emailVerificationOtpAttempts = previousOtpAttempts;
+    user.lastEmailVerificationOtpSentAt = previousLastSentAt;
+
+    await user.save({ validateBeforeSave: false });
 
     throw new ApiError(
       500,
-      "Failed to send verification email. Please try again later.",
+      "Failed to send verification OTP. Please try again later.",
     );
   }
 
@@ -406,11 +468,7 @@ export const resendVerificationEmail = async ({ email }) => {
   };
 };
 
-/**
- * Login user
- */
-
-export const login = async ({ email, password }) => {
+export const loginUser = async ({ email, password }) => {
   const normalizedEmail = email?.trim().toLowerCase();
 
   if (!normalizedEmail || !password) {
@@ -436,10 +494,13 @@ export const login = async ({ email, password }) => {
     throw new ApiError(403, "Your account is inactive. Contact admin.");
   }
 
-  // Optional: enable if you want email verification before login
-  // if (!user.isEmailVerified) {
-  //   throw new ApiError(403, "Please verify your email before logging in");
-  // }
+  // Block login until email is verified
+  if (!user.isEmailVerified) {
+    throw new ApiError(403, "Please verify your email before logging in", {
+      requiresEmailVerification: true,
+      email: user.email,
+    });
+  }
 
   const isPasswordMatched = await bcrypt.compare(password, user.password);
 
@@ -465,12 +526,8 @@ export const login = async ({ email, password }) => {
   };
 };
 
-/**
- * Refresh access token using refresh token
- */
-
-export const refreshAccessToken = async (refreshToken) => {
-  if (!refreshToken) {
+export const refreshAccessToken = async ({ refreshToken }) => {
+  if (!refreshToken || typeof refreshToken !== "string") {
     throw new ApiError(401, "Refresh token is required");
   }
 
@@ -482,7 +539,9 @@ export const refreshAccessToken = async (refreshToken) => {
     throw new ApiError(401, "Invalid or expired refresh token");
   }
 
-  const user = await User.findById(decoded.userId).select("+refreshToken");
+  const user = await User.findById(decoded.userId).select(
+    "+refreshToken isActive isEmailVerified",
+  );
 
   if (!user) {
     throw new ApiError(401, "Invalid refresh token");
@@ -490,6 +549,13 @@ export const refreshAccessToken = async (refreshToken) => {
 
   if (!user.isActive) {
     throw new ApiError(403, "Account has been disabled");
+  }
+
+  if (!user.isEmailVerified) {
+    throw new ApiError(403, "Please verify your email before continuing", {
+      requiresEmailVerification: true,
+      email: user.email,
+    });
   }
 
   if (!user.refreshToken) {
@@ -502,7 +568,6 @@ export const refreshAccessToken = async (refreshToken) => {
     throw new ApiError(401, "Invalid refresh token");
   }
 
-  // Rotate refresh token
   const {
     accessToken,
     refreshToken: newRefreshToken,
@@ -523,9 +588,6 @@ export const refreshAccessToken = async (refreshToken) => {
     },
   };
 };
-/**
- * Logout user
- */
 
 export const logout = async (userId) => {
   if (!userId) {
@@ -541,19 +603,12 @@ export const logout = async (userId) => {
   user.refreshToken = null;
   user.lastLogoutAt = new Date();
 
-  await user.save({
-    validateBeforeSave: false,
-  });
+  await user.save({ validateBeforeSave: false });
 
   return {
-    message: "Logged out successfully",
+    message: "Logout successful",
   };
 };
-
-/**
- * Forgot password
- * Generate reset token and save hashed token in DB
- */
 
 export const forgotPassword = async (email) => {
   const normalizedEmail = email?.trim().toLowerCase();

@@ -32,32 +32,35 @@ export const forgotPasswordTemplate = ({ name, resetUrl }) => {
   };
 };
 
-export const verifyEmailTemplate = ({ name, verifyUrl }) => {
+export const verifyEmailOtpTemplate = ({ name, otp }) => {
   return {
     subject: "Verify your email",
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
-        <h2>Verify your email</h2>
+        <h2>Email Verification</h2>
         <p>Hi ${name || "User"},</p>
-        <p>Welcome to CRM. Please verify your email to activate your account.</p>
-        <p>
-          <a 
-            href="${verifyUrl}" 
+        <p>Your email verification code is:</p>
+
+        <div style="margin: 24px 0;">
+          <span
             style="
-              display:inline-block;
-              padding:12px 20px;
-              background:#16a34a;
-              color:#ffffff;
-              text-decoration:none;
-              border-radius:6px;
-              font-weight:600;
+              display: inline-block;
+              font-size: 28px;
+              letter-spacing: 6px;
+              font-weight: 700;
+              background: #f3f4f6;
+              padding: 12px 18px;
+              border-radius: 10px;
             "
           >
-            Verify Email
-          </a>
-        </p>
+            ${otp}
+          </span>
+        </div>
+
+        <p>This OTP will expire in 10 minutes.</p>
         <p>If you did not create this account, you can ignore this email.</p>
       </div>
     `,
+    text: `Your email verification OTP is ${otp}`,
   };
 };

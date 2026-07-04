@@ -5,26 +5,30 @@ const permissionSchema = new mongoose.Schema(
     key: {
       type: String,
       required: true,
-      trim: true,
       unique: true,
+      trim: true,
       index: true,
     },
+
     module: {
       type: String,
       required: true,
       trim: true,
       index: true,
     },
+
     action: {
       type: String,
       required: true,
       trim: true,
     },
+
     description: {
       type: String,
       trim: true,
       default: "",
     },
+
     isActive: {
       type: Boolean,
       default: true,

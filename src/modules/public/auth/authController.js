@@ -1,6 +1,8 @@
 import ApiResponse from "../../../utils/apiResponse.js";
 import asyncHandler from "../../../utils/asyncHandler.js";
 import * as authService from "./authService.js";
+import { REFRESH_TOKEN_COOKIE_NAME } from "../../../utils/constants.js";
+import { getRefreshTokenCookieOptions } from "../../../utils/cookieUtils.js";
 
 const getValidatedBody = (req) => req.validated?.body || req.body;
 const getValidatedParams = (req) => req.validated?.params || req.params;
@@ -23,9 +25,9 @@ export const register = asyncHandler(async (req, res) => {
     );
 });
 
-export const verifyEmail = asyncHandler(async (req, res) => {
+export const verifyEmailOtp = asyncHandler(async (req, res) => {
   const body = getValidatedBody(req);
-  const result = await authService.verifyEmail(body);
+  const result = await authService.verifyEmailOtp(body);
 
   return res
     .status(200)
@@ -38,9 +40,9 @@ export const verifyEmail = asyncHandler(async (req, res) => {
     );
 });
 
-export const resendVerificationEmail = asyncHandler(async (req, res) => {
+export const resendEmailVerificationOtp = asyncHandler(async (req, res) => {
   const body = getValidatedBody(req);
-  const result = await authService.resendVerificationEmail(body);
+  const result = await authService.resendEmailVerificationOtp(body);
 
   return res
     .status(200)
@@ -58,9 +60,21 @@ export const login = asyncHandler(async (req, res) => {
 
   const result = await authService.loginUser(body);
 
+  res.cookie(
+    REFRESH_TOKEN_COOKIE_NAME,
+    result.tokens.refreshToken,
+    getRefreshTokenCookieOptions(),
+  );
+
   return res
     .status(200)
-    .json(new ApiResponse(200, result, result.message || "Login successful"));
+    .json(
+      new ApiResponse(
+        200,
+        { user: result.user, accessToken: result.tokens.accessToken },
+        result.message || "Login successful",
+      ),
+    );
 });
 
 export const getMe = asyncHandler(async (req, res) => {
@@ -82,7 +96,11 @@ export const getMe = asyncHandler(async (req, res) => {
 export const logout = asyncHandler(async (req, res) => {
   const userId = getUserId(req);
 
+  console.log(req.user);
+
   const result = await authService.logoutUser(userId);
+
+  res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getRefreshTokenCookieOptions());
 
   return res
     .status(200)

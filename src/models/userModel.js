@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
-import { USER_STATUS } from "../utils/enum.js";
+import { USER_STATUS } from "../utils/accessScope.js";
 
 const { Schema } = mongoose;
 
@@ -80,28 +80,35 @@ const userSchema = new Schema(
     isEmailVerified: {
       type: Boolean,
       default: false,
+      index: true,
     },
-    emailVerificationToken: {
+
+    emailVerificationOtp: {
       type: String,
       default: null,
       select: false,
     },
-    emailVerificationExpires: {
+
+    emailVerificationOtpExpires: {
       type: Date,
       default: null,
       select: false,
     },
+
+    emailVerificationOtpAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+
+    lastEmailVerificationOtpSentAt: {
+      type: Date,
+      default: null,
+    },
+
     emailVerifiedAt: {
       type: Date,
       default: null,
-    },
-    lastVerificationEmailSentAt: {
-      type: Date,
-      default: null,
-    },
-    verificationEmailSendCount: {
-      type: Number,
-      default: 0,
     },
 
     authProvider: {
@@ -143,9 +150,22 @@ const userSchema = new Schema(
       index: true,
     },
 
-    lastLoginAt: {
+    refreshToken: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    passwordResetToken: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    passwordResetExpires: {
       type: Date,
       default: null,
+      select: false,
     },
 
     passwordChangedAt: {
@@ -153,13 +173,12 @@ const userSchema = new Schema(
       default: null,
     },
 
-    invitedBy: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
+    lastLoginAt: {
+      type: Date,
       default: null,
     },
 
-    invitedAt: {
+    lastLogoutAt: {
       type: Date,
       default: null,
     },

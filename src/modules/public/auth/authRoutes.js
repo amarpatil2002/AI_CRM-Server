@@ -13,10 +13,15 @@ import {
 const router = Router();
 
 router.post("/register", validate(registerSchema), authController.register);
+router.post("/verify-email", authController.verifyEmailOtp);
+router.post(
+  "/resend-verification-otp",
+  authController.resendEmailVerificationOtp,
+);
 router.post("/login", validate(loginSchema), authController.login);
+router.post("/logout", protect, authController.logout);
 router.get("/me", protect, authController.getMe);
 
-router.post("/logout", protect, authController.logout);
 router.post(
   "/forgot-password",
   validate(forgotPasswordSchema),

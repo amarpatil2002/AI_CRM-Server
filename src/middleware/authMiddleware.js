@@ -29,19 +29,17 @@ export const protect = async (req, res, next) => {
     let decoded;
     try {
       decoded = verifyAccessToken(token);
-    } catch (error) {
+    } catch {
       return next(new ApiError(401, "Unauthorized: invalid or expired token"));
     }
 
-    const user = await User.findById(decoded.userId)
-      .select("+password")
-      .populate({
-        path: "roleId",
-        populate: {
-          path: "permissions",
-          model: "Permission",
-        },
-      });
+    const user = await User.findById(decoded.userId).populate({
+      path: "roleId",
+      populate: {
+        path: "permissions",
+        model: "Permission",
+      },
+    });
 
     if (!user) {
       return next(new ApiError(401, "Unauthorized: user not found"));
