@@ -96,8 +96,6 @@ export const getMe = asyncHandler(async (req, res) => {
 export const logout = asyncHandler(async (req, res) => {
   const userId = getUserId(req);
 
-  console.log(req.user);
-
   const result = await authService.logoutUser(userId);
 
   res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, getRefreshTokenCookieOptions());

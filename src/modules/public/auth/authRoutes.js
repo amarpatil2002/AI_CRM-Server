@@ -22,6 +22,8 @@ router.post("/login", validate(loginSchema), authController.login);
 router.post("/logout", protect, authController.logout);
 router.get("/me", protect, authController.getMe);
 
+//Remaining routes for forgot password, reset password, and change password
+
 router.post(
   "/forgot-password",
   validate(forgotPasswordSchema),

@@ -589,7 +589,7 @@ export const refreshAccessToken = async ({ refreshToken }) => {
   };
 };
 
-export const logout = async (userId) => {
+export const logoutUser = async (userId) => {
   if (!userId) {
     throw new ApiError(400, "User id is required");
   }

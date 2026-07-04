@@ -111,7 +111,6 @@ const organizationSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
 
     status: {
