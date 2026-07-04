@@ -77,21 +77,31 @@ const userSchema = new Schema(
       default: null,
     },
 
-    emailVerificationToken: {
-      type: String,
-      select: false,
-      default: null,
-    },
-
-    emailVerificationExpires: {
-      type: Date,
-      default: null,
-    },
-
     isEmailVerified: {
       type: Boolean,
       default: false,
-      index: true,
+    },
+    emailVerificationToken: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    emailVerificationExpires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    emailVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+    lastVerificationEmailSentAt: {
+      type: Date,
+      default: null,
+    },
+    verificationEmailSendCount: {
+      type: Number,
+      default: 0,
     },
 
     authProvider: {

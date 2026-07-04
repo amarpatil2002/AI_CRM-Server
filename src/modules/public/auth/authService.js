@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { sendEmail } from "../../../service/emailService.js";
+import { verifyEmailTemplate } from "../../../utils/emailTemplates.js";
 import mongoose from "mongoose";
 import User from "../../../models/userModel.js";
 import Organization from "../../../models/orgnizationModel.js";
@@ -84,6 +85,20 @@ const generateOrganizationSlug = async (organizationName, session) => {
   return slug;
 };
 
+const EMAIL_VERIFY_TOKEN_EXPIRES_MINUTES =
+  Number(process.env.EMAIL_VERIFY_TOKEN_EXPIRES_MINUTES) || 1440;
+
+const RESEND_VERIFICATION_COOLDOWN_SECONDS =
+  Number(process.env.RESEND_VERIFICATION_COOLDOWN_SECONDS) || 60;
+
+/**
+ * Normalize email input for consistent lookup/storage.
+ */
+const normalizeEmail = (email) =>
+  String(email || "")
+    .trim()
+    .toLowerCase();
+
 /* -------------------------------------------------------------------------- */
 /*                               AUTH SERVICES                                */
 /* -------------------------------------------------------------------------- */
@@ -123,6 +138,7 @@ export const registerUser = async (payload) => {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    // 1) Create user first
     const [user] = await User.create(
       [
         {
@@ -132,7 +148,7 @@ export const registerUser = async (payload) => {
           password: hashedPassword,
           phone,
           organizationId: null,
-          role: "owner",
+          roleId: null, // assign later when role system is added
           isEmailVerified: false,
           isActive: true,
           authProvider: "local",
@@ -141,6 +157,7 @@ export const registerUser = async (payload) => {
       { session },
     );
 
+    // 2) Create organization
     const slug = await generateOrganizationSlug(organizationName, session);
 
     const [organization] = await Organization.create(
@@ -160,35 +177,61 @@ export const registerUser = async (payload) => {
       { session },
     );
 
+    // 3) Link organization to user
     user.organizationId = organization._id;
 
-    const { accessToken, refreshToken, hashedRefreshToken } =
-      await generateAuthTokens(user);
+    // 4) Generate email verification token
+    const rawVerifyToken = crypto.randomBytes(32).toString("hex");
 
-    user.refreshToken = hashedRefreshToken;
+    const hashedVerifyToken = crypto
+      .createHash("sha256")
+      .update(rawVerifyToken)
+      .digest("hex");
+
+    user.emailVerificationToken = hashedVerifyToken;
+    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
     await user.save({
       session,
       validateBeforeSave: false,
     });
 
+    // 5) Commit DB transaction first
     await session.commitTransaction();
     session.endSession();
 
+    // 6) Send verification email AFTER commit
+    const verifyUrl = `${process.env.CLIENT_URL}/verify-email?token=${rawVerifyToken}`;
+
+    const { subject, html } = verifyEmailTemplate({
+      name: user.firstName,
+      verifyUrl,
+    });
+
+    try {
+      await sendEmail({
+        to: user.email,
+        subject,
+        html,
+      });
+    } catch (emailError) {
+      // account is created successfully, but email failed
+      // don't rollback DB now because transaction already committed
+      console.error("Verification email send failed:", emailError.message);
+    }
+
     return {
-      message: "User registered successfully",
+      message: "Registration successful. Please verify your email to continue.",
       user: sanitizeUser(user),
-      organization,
-      tokens: {
-        accessToken,
-        refreshToken,
+      organization: {
+        _id: organization._id,
+        name: organization.name,
+        slug: organization.slug,
       },
     };
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
-
-    console.log(error);
 
     if (error?.code === 11000) {
       if (error.keyPattern?.email) {
@@ -206,6 +249,161 @@ export const registerUser = async (payload) => {
 
     throw new ApiError(500, error.message || "Failed to register user");
   }
+};
+
+export const verifyEmail = async ({ token }) => {
+  if (!token || typeof token !== "string") {
+    throw new ApiError(400, "Verification token is required");
+  }
+
+  const hashedToken = hashToken(token);
+
+  const user = await User.findOne({
+    emailVerificationToken: hashedToken,
+    emailVerificationExpires: { $gt: new Date() },
+  }).select(
+    "+emailVerificationToken +emailVerificationExpires email firstName lastName isEmailVerified emailVerifiedAt",
+  );
+
+  if (!user) {
+    throw new ApiError(400, "Invalid or expired verification token");
+  }
+
+  // Optional extra guard
+  if (user.isEmailVerified) {
+    return {
+      message: "Email is already verified",
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        isEmailVerified: true,
+        emailVerifiedAt: user.emailVerifiedAt || null,
+      },
+    };
+  }
+
+  user.isEmailVerified = true;
+  user.emailVerifiedAt = new Date();
+
+  // Invalidate token so it cannot be reused
+  user.emailVerificationToken = null;
+  user.emailVerificationExpires = null;
+
+  await user.save();
+
+  return {
+    message: "Email verified successfully",
+    user: {
+      id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      isEmailVerified: user.isEmailVerified,
+      emailVerifiedAt: user.emailVerifiedAt,
+    },
+  };
+};
+
+/**
+ * Resend verification email.
+ *
+ * Security posture:
+ * - Return a generic success message even if user doesn't exist
+ * - Return the same generic message if email is already verified
+ *   This reduces account enumeration risk.
+ */
+
+export const resendVerificationEmail = async ({ email }) => {
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedEmail) {
+    throw new ApiError(400, "Email is required");
+  }
+
+  const genericMessage =
+    "If the account exists and is not verified, a verification email has been sent.";
+
+  const user = await User.findOne({ email: normalizedEmail }).select(
+    "+emailVerificationToken +emailVerificationExpires email firstName isEmailVerified lastVerificationEmailSentAt verificationEmailSendCount",
+  );
+
+  // Do not reveal whether account exists
+  if (!user) {
+    return {
+      message: genericMessage,
+      sentTo: normalizedEmail,
+      expiresAt: null,
+    };
+  }
+
+  // Do not reveal verified status either
+  if (user.isEmailVerified) {
+    return {
+      message: genericMessage,
+      sentTo: normalizedEmail,
+      expiresAt: null,
+    };
+  }
+
+  // Cooldown to prevent abuse/spam
+  if (user.lastVerificationEmailSentAt) {
+    const secondsSinceLastSend = Math.floor(
+      (Date.now() - new Date(user.lastVerificationEmailSentAt).getTime()) /
+        1000,
+    );
+
+    if (secondsSinceLastSend < RESEND_VERIFICATION_COOLDOWN_SECONDS) {
+      throw new ApiError(
+        429,
+        `Please wait ${RESEND_VERIFICATION_COOLDOWN_SECONDS - secondsSinceLastSend} seconds before requesting another verification email`,
+      );
+    }
+  }
+
+  const { rawToken, hashedToken } = generateVerificationTokenPair();
+  const expiresAt = getVerificationExpiryDate();
+
+  user.emailVerificationToken = hashedToken;
+  user.emailVerificationExpires = expiresAt;
+  user.lastVerificationEmailSentAt = new Date();
+  user.verificationEmailSendCount =
+    Number(user.verificationEmailSendCount || 0) + 1;
+
+  await user.save();
+
+  const verifyUrl = buildVerificationUrl(rawToken);
+
+  const { subject, html, text } = getVerificationEmailTemplate({
+    firstName: user.firstName,
+    verifyUrl,
+  });
+
+  try {
+    await sendMail({
+      to: user.email,
+      subject,
+      html,
+      text,
+    });
+  } catch (error) {
+    // Roll back verification token fields if email sending fails
+    user.emailVerificationToken = null;
+    user.emailVerificationExpires = null;
+    await user.save();
+
+    throw new ApiError(
+      500,
+      "Failed to send verification email. Please try again later.",
+    );
+  }
+
+  return {
+    message: genericMessage,
+    sentTo: user.email,
+    expiresAt,
+  };
 };
 
 /**

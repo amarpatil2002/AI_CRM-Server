@@ -23,6 +23,36 @@ export const register = asyncHandler(async (req, res) => {
     );
 });
 
+export const verifyEmail = asyncHandler(async (req, res) => {
+  const body = getValidatedBody(req);
+  const result = await authService.verifyEmail(body);
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        result,
+        result.message || "Email verified successfully",
+      ),
+    );
+});
+
+export const resendVerificationEmail = asyncHandler(async (req, res) => {
+  const body = getValidatedBody(req);
+  const result = await authService.resendVerificationEmail(body);
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        result,
+        result.message || "Verification email sent successfully",
+      ),
+    );
+});
+
 export const login = asyncHandler(async (req, res) => {
   const body = getValidatedBody(req);
 

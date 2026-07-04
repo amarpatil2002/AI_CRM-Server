@@ -1,8 +1,7 @@
-import dotenv from "dotenv";
+import "./config/env.js";
+
 import app from "./app.js";
 import connectDB from "./config/db.js";
-
-dotenv.config();
 
 const port = process.env.PORT || 5000;
 
@@ -11,7 +10,7 @@ const port = process.env.PORT || 5000;
     await connectDB();
 
     app.listen(port, () => {
-      console.log(`Server linsting at port ${port}`);
+      console.log(`Server listening at port ${port}`);
     });
   } catch (error) {
     console.log(error);

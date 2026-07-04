@@ -1,7 +1,7 @@
 import { Router } from "express";
 import * as authController from "./authController.js";
-import validate from "../../../moddleware/validateMiddleware.js";
-import { protect } from "../../../moddleware/authMiddleware.js";
+import validate from "../../../middleware/validateMiddleware.js";
+import { protect } from "../../../middleware/authMiddleware.js";
 import {
   registerSchema,
   loginSchema,

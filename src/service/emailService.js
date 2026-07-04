@@ -20,7 +20,7 @@ const getTransporter = () => {
   return transporter;
 };
 
-export const sendEmail = async ({ to, subject, html, text }) => {
+export const sendEmail = async ({ to, subject, html }) => {
   if (!to || !subject || !html) {
     throw new ApiError(400, "Email recipient, subject and html are required");
   }
@@ -33,7 +33,6 @@ export const sendEmail = async ({ to, subject, html, text }) => {
       to,
       subject,
       html,
-      text,
     });
 
     return {
