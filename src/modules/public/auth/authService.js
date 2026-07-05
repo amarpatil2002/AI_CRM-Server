@@ -1,14 +1,14 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
-import { sendEmail } from "../../../service/emailService.js";
-import { verifyEmailOtpTemplate } from "../../../utils/emailTemplates.js";
+import { sendEmail } from "../../../service/email/emailService.js";
+import { verifyEmailOtpTemplate } from "../../../service/email/emailTemplates.js";
 import mongoose from "mongoose";
 import User from "../../../models/userModel.js";
 import Organization from "../../../models/orgnizationModel.js";
 import OrganizationMember from "../../../models/organizationMemberModel.js";
+import Role from "../../../models/roleModel.js";
 import ApiError from "../../../utils/apiError.js";
-import { createDefaultRolesForOrganization } from "../../../service/auth/createDefaultRolesForOrganization.js";
 
 /* -------------------------------------------------------------------------- */
 /*                               HELPER FUNCTIONS                             */
@@ -186,11 +186,16 @@ export const registerUser = async (payload) => {
     );
 
     // 2) create default roles for this organization
-    const { ownerRole } = await createDefaultRolesForOrganization({
-      organizationId: organization._id,
-      actorUserId: null,
-      session,
-    });
+    const ownerRole = await Role.findOne({
+      organization: null,
+      code: "owner",
+      isSystem: true,
+      status: "ACTIVE",
+    }).session(session);
+
+    if (!ownerRole) {
+      throw new ApiError(500, "Global OWNER role not found");
+    }
 
     if (!ownerRole?._id) {
       throw new ApiError(500, "Owner role could not be created");

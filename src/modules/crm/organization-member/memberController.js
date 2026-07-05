@@ -80,31 +80,66 @@ export const resendOrganizationMemberInvite = async (req, res, next) => {
   }
 };
 
-export const createOrganizationMember = async (req, res, next) => {
+export const getInviteByToken = async (req, res, next) => {
   try {
-    if (!req.user?._id) {
-      throw new ApiError(401, "Unauthorized");
-    }
-
-    if (!req.user?.organizationId) {
-      throw new ApiError(400, "No organization found for current user");
-    }
-
-    const member = await organizationMemberService.createOrganizationMember({
-      organizationId: req.user.organizationId,
-      actorUserId: req.user._id,
-      payload: req.body,
+    const result = await organizationMemberService.getInviteByToken({
+      token: req.params.token,
     });
 
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: "Member created successfully",
-      data: member,
+      message: "Invite details fetched successfully",
+      data: result,
     });
   } catch (error) {
     next(error);
   }
 };
+
+export const acceptOrganizationInvite = async (req, res, next) => {
+  try {
+    const result = await organizationMemberService.acceptOrganizationInvite({
+      token: req.body.token,
+      password: req.body.password,
+      confirmPassword: req.body.confirmPassword,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Invitation accepted successfully",
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// note: This endpoint is currently disabled in the routes file, as the preferred way to create a member is through the invite endpoint.
+// export const createOrganizationMember = async (req, res, next) => {
+//   try {
+//     if (!req.user?._id) {
+//       throw new ApiError(401, "Unauthorized");
+//     }
+
+//     if (!req.user?.organizationId) {
+//       throw new ApiError(400, "No organization found for current user");
+//     }
+
+//     const member = await organizationMemberService.createOrganizationMember({
+//       organizationId: req.user.organizationId,
+//       actorUserId: req.user._id,
+//       payload: req.body,
+//     });
+
+//     return res.status(201).json({
+//       success: true,
+//       message: "Member created successfully",
+//       data: member,
+//     });
+//   } catch (error) {
+//     next(error);
+//   }
+// };
 
 export const getOrganizationMemberById = async (req, res, next) => {
   try {

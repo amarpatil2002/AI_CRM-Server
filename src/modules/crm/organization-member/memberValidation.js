@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import * as yup from "yup";
 
 const objectId = yup
@@ -52,6 +53,26 @@ export const resendOrganizationMemberInviteSchema = yup.object({
         "Member id must be a valid MongoDB ObjectId",
         (value) => mongoose.Types.ObjectId.isValid(value),
       ),
+  }),
+});
+
+export const getInviteByTokenSchema = yup.object({
+  params: yup.object({
+    token: yup.string().trim().required("Invite token is required"),
+  }),
+});
+
+export const acceptInviteSchema = yup.object({
+  body: yup.object({
+    token: yup.string().trim().required("Invite token is required"),
+    password: yup
+      .string()
+      .required("Password is required")
+      .min(8, "Password must be at least 8 characters long"),
+    confirmPassword: yup
+      .string()
+      .required("Confirm password is required")
+      .oneOf([yup.ref("password")], "Confirm password must match password"),
   }),
 });
 

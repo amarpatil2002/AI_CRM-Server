@@ -6,13 +6,15 @@ import validate from "../../../middleware/validateMiddleware.js";
 import {
   listOrganizationMembers,
   inviteOrganizationMember,
-  createOrganizationMember,
+  // createOrganizationMember,
   getOrganizationMemberById,
   updateOrganizationMember,
   updateOrganizationMemberRoles,
   updateOrganizationMemberStatus,
   deleteOrganizationMember,
   resendOrganizationMemberInvite,
+  acceptOrganizationInvite,
+  getInviteByToken,
 } from "./memberController.js";
 
 import {
@@ -25,6 +27,8 @@ import {
   updateOrganizationMemberStatusSchema,
   deleteOrganizationMemberSchema,
   resendOrganizationMemberInviteSchema,
+  getInviteByTokenSchema,
+  acceptInviteSchema,
 } from "./memberValidation.js";
 
 const router = Router();
@@ -51,6 +55,18 @@ router.post(
   authorize("user:invite"),
   validate(resendOrganizationMemberInviteSchema),
   resendOrganizationMemberInvite,
+);
+
+router.get(
+  "/invite/:token",
+  validate(getInviteByTokenSchema),
+  getInviteByToken,
+);
+
+router.post(
+  "/accept-invite",
+  validate(acceptInviteSchema),
+  acceptOrganizationInvite,
 );
 
 // 2nd way to create a member is by using the invite endpoint, so we can disable this endpoint for now

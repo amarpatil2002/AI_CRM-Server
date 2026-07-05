@@ -5,18 +5,18 @@ const errorHandler = (err, req, res, next) => {
   const message = err.message || "Internal Server Error";
 
   // Log error details
-  // console.error("API Error:", {
-  //   method: req.method,
-  //   url: req.originalUrl,
-  //   statusCode,
-  //   message,
-  //   userId: req.user?._id || null,
-  //   body: req.body,
-  //   params: req.params,
-  //   query: req.query,
-  //   stack: err.stack,
-  //   timestamp: new Date().toISOString(),
-  // });
+  console.error("API Error:", {
+    method: req.method,
+    url: req.originalUrl,
+    statusCode,
+    message,
+    userId: req.user?._id || null,
+    body: req.body,
+    params: req.params,
+    query: req.query,
+    stack: err.stack,
+    timestamp: new Date().toISOString(),
+  });
 
   return res.status(statusCode).json({
     success: false,

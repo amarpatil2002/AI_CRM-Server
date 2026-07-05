@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
-import { emailConfig } from "../config/emailConfig.js";
-import ApiError from "../utils/apiError.js";
+import { emailConfig } from "../../config/emailConfig.js";
+import ApiError from "../../utils/apiError.js";
 
 let transporter;
 

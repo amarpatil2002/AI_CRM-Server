@@ -1,10 +1,15 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 import User from "../../../models/userModel.js";
 import Role from "../../../models/roleModel.js";
 import OrganizationMember from "../../../models/organizationMemberModel.js";
+import Organization from "../../../models/orgnizationModel.js";
+import Permission from "../../../models/permissionModel.js";
 import ApiError from "../../../utils/apiError.js";
+import { organizationInviteTemplate } from "../../../service/email/emailTemplates.js";
+import { sendEmail } from "../../../service/email/emailService.js";
 
 /* -------------------------------------------------------------------------- */
 /*                               Helper functions                             */
@@ -100,9 +105,12 @@ const validateRoleIdsForOrganization = async ({
 
   let query = Role.find({
     _id: { $in: uniqueRoleIds },
-    organization: organizationId,
     status: "ACTIVE",
     isDeleted: false,
+    $or: [
+      { organization: null }, // global roles
+      { organization: organizationId }, // org custom roles
+    ],
   }).select("_id name code isDefault isSystem");
 
   if (session) {
@@ -115,6 +123,15 @@ const validateRoleIdsForOrganization = async ({
     throw new ApiError(
       400,
       "One or more roles are invalid or do not belong to this organization",
+    );
+  }
+
+  const hasOwnerRole = roles.some((role) => role.code === "owner");
+
+  if (hasOwnerRole) {
+    throw new ApiError(
+      403,
+      "OWNER role cannot be assigned through member management. Use ownership transfer flow instead.",
     );
   }
 
@@ -294,6 +311,38 @@ const buildListFilter = ({ organizationId, status, roleId }) => {
   }
 
   return filter;
+};
+
+const sendOrganizationInviteEmail = async ({
+  email,
+  firstName,
+  organizationName,
+  inviteUrl,
+  inviterName,
+}) => {
+  const { subject, html, text } = organizationInviteTemplate({
+    email,
+    name: firstName,
+    organizationName,
+    inviteUrl,
+    inviterName,
+  });
+
+  await sendEmail({
+    to: email,
+    subject: subject,
+    html: html,
+  });
+};
+
+const generateInviteToken = () => {
+  return crypto.randomBytes(32).toString("hex");
+};
+
+const getInviteTokenExpiryDate = () => {
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 1); // expires after 1 day
+  return expiresAt;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -482,7 +531,6 @@ export const inviteOrganizationMember = async ({
           joinedAt: null,
           inviteToken,
           inviteTokenExpiresAt,
-          inviteAcceptedAt: null,
           inviteEmailSentAt: new Date(),
           createdBy: actorUserId,
           updatedBy: actorUserId,
@@ -563,7 +611,7 @@ export const resendOrganizationMemberInvite = async ({
 
   try {
     const member = await OrganizationMember.findOne({
-      _id: memberId,
+      user: memberId,
       organization: organizationId,
       isDeleted: false,
     })
@@ -646,11 +694,79 @@ export const resendOrganizationMemberInvite = async ({
   }
 };
 
+export const getInviteByToken = async ({ token }) => {
+  if (!token) {
+    throw new ApiError(400, "Invite token is required");
+  }
+
+  const member = await OrganizationMember.findOne({
+    inviteToken: token,
+    status: "INVITED",
+    isDeleted: false,
+  })
+    .populate({
+      path: "organization",
+      select: "_id name slug status",
+    })
+    .populate({
+      path: "user",
+      select: "_id firstName lastName email",
+    })
+    .populate({
+      path: "roles",
+      select: "_id name code",
+      match: {
+        status: "ACTIVE",
+        isDeleted: false,
+      },
+    });
+
+  if (!member) {
+    throw new ApiError(404, "Invalid invite link");
+  }
+
+  if (!member.organization) {
+    throw new ApiError(404, "Organization not found");
+  }
+
+  if (member.organization.status !== "ACTIVE") {
+    throw new ApiError(400, "Organization is inactive");
+  }
+
+  if (
+    !member.inviteTokenExpiresAt ||
+    member.inviteTokenExpiresAt.getTime() < Date.now()
+  ) {
+    throw new ApiError(400, "Invite link has expired");
+  }
+
+  return {
+    memberId: member._id,
+    email: member.user?.email || null,
+    firstName: member.user?.firstName || null,
+    lastName: member.user?.lastName || null,
+    organization: {
+      _id: member.organization._id,
+      name: member.organization.name,
+      slug: member.organization.slug,
+    },
+    roles: (member.roles || []).map((role) => ({
+      _id: role._id,
+      name: role.name,
+      code: role.code,
+    })),
+  };
+};
+
 /* -------------------------------------------------------------------------- */
 /*                          Accept Organization Invite                         */
 /* -------------------------------------------------------------------------- */
 
-export const acceptOrganizationInvite = async ({ token, password }) => {
+export const acceptOrganizationInvite = async ({
+  token,
+  password,
+  confirmPassword,
+}) => {
   if (!token) {
     throw new ApiError(400, "Invite token is required");
   }
@@ -661,6 +777,10 @@ export const acceptOrganizationInvite = async ({ token, password }) => {
 
   if (password.length < 8) {
     throw new ApiError(400, "Password must be at least 8 characters long");
+  }
+
+  if (password !== confirmPassword) {
+    throw new ApiError(400, "Confirm password does not match");
   }
 
   const session = await mongoose.startSession();
@@ -687,12 +807,14 @@ export const acceptOrganizationInvite = async ({ token, password }) => {
 
     if (
       !member.inviteTokenExpiresAt ||
-      member.inviteTokenExpiresAt < new Date()
+      member.inviteTokenExpiresAt.getTime() < Date.now()
     ) {
       throw new ApiError(400, "Invite token has expired");
     }
 
-    const user = await User.findById(member.user).session(session);
+    const user = await User.findById(member.user)
+      .select("+password")
+      .session(session);
 
     if (!user) {
       throw new ApiError(404, "User not found for this invite");
@@ -701,6 +823,7 @@ export const acceptOrganizationInvite = async ({ token, password }) => {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     user.password = hashedPassword;
+    user.organizationId = member.organization;
     user.isActive = true;
     user.status = "ACTIVE";
     user.passwordChangedAt = new Date();
@@ -736,154 +859,154 @@ export const acceptOrganizationInvite = async ({ token, password }) => {
 /*                               Create member                                */
 /* -------------------------------------------------------------------------- */
 
-export const createOrganizationMember = async ({
-  organizationId,
-  actorUserId,
-  payload,
-}) => {
-  if (!organizationId) {
-    throw new ApiError(400, "Organization id is required");
-  }
+// export const createOrganizationMember = async ({
+//   organizationId,
+//   actorUserId,
+//   payload,
+// }) => {
+//   if (!organizationId) {
+//     throw new ApiError(400, "Organization id is required");
+//   }
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
 
-  try {
-    const firstName = payload.firstName?.trim();
-    const lastName = payload.lastName?.trim();
-    const email = normalizeEmail(payload.email);
-    const password = payload.password;
-    const phone = sanitizeNullableString(payload.phone);
-    const title = sanitizeNullableString(payload.title);
-    const department = sanitizeNullableString(payload.department);
-    const employeeId = sanitizeNullableString(payload.employeeId);
-    const managerId = payload.managerId || null;
-    const roleIds = [...new Set((payload.roles || []).map(String))];
+//   try {
+//     const firstName = payload.firstName?.trim();
+//     const lastName = payload.lastName?.trim();
+//     const email = normalizeEmail(payload.email);
+//     const password = payload.password;
+//     const phone = sanitizeNullableString(payload.phone);
+//     const title = sanitizeNullableString(payload.title);
+//     const department = sanitizeNullableString(payload.department);
+//     const employeeId = sanitizeNullableString(payload.employeeId);
+//     const managerId = payload.managerId || null;
+//     const roleIds = [...new Set((payload.roles || []).map(String))];
 
-    if (!firstName || !lastName || !email || !password) {
-      throw new ApiError(
-        400,
-        "First name, last name, email and password are required",
-      );
-    }
+//     if (!firstName || !lastName || !email || !password) {
+//       throw new ApiError(
+//         400,
+//         "First name, last name, email and password are required",
+//       );
+//     }
 
-    if (password.length < 8) {
-      throw new ApiError(400, "Password must be at least 8 characters long");
-    }
+//     if (password.length < 8) {
+//       throw new ApiError(400, "Password must be at least 8 characters long");
+//     }
 
-    await validateRoleIdsForOrganization({
-      roleIds,
-      organizationId,
-      session,
-    });
+//     await validateRoleIdsForOrganization({
+//       roleIds,
+//       organizationId,
+//       session,
+//     });
 
-    await validateManagerForOrganization({
-      managerId,
-      organizationId,
-      session,
-    });
+//     await validateManagerForOrganization({
+//       managerId,
+//       organizationId,
+//       session,
+//     });
 
-    let user = await User.findOne({ email }).session(session);
+//     let user = await User.findOne({ email }).session(session);
 
-    if (user) {
-      ensureUserCanBelongToOrganization({ user, organizationId });
+//     if (user) {
+//       ensureUserCanBelongToOrganization({ user, organizationId });
 
-      await ensureNoDuplicateMembership({
-        organizationId,
-        userId: user._id,
-        session,
-      });
+//       await ensureNoDuplicateMembership({
+//         organizationId,
+//         userId: user._id,
+//         session,
+//       });
 
-      if (!user.organizationId) {
-        user.organizationId = organizationId;
-      }
+//       if (!user.organizationId) {
+//         user.organizationId = organizationId;
+//       }
 
-      if (managerId !== null) {
-        user.managerId = managerId;
-      }
+//       if (managerId !== null) {
+//         user.managerId = managerId;
+//       }
 
-      if (phone && !user.phone) {
-        user.phone = phone;
-      }
+//       if (phone && !user.phone) {
+//         user.phone = phone;
+//       }
 
-      if (!user.firstName) user.firstName = firstName;
-      if (!user.lastName) user.lastName = lastName;
+//       if (!user.firstName) user.firstName = firstName;
+//       if (!user.lastName) user.lastName = lastName;
 
-      /**
-       * If user exists but has no password (rare case), allow setting it.
-       * If user already has a password, we do not overwrite it from this endpoint.
-       */
-      if (!user.password) {
-        user.password = await bcrypt.hash(password, 12);
-      }
+//       /**
+//        * If user exists but has no password (rare case), allow setting it.
+//        * If user already has a password, we do not overwrite it from this endpoint.
+//        */
+//       if (!user.password) {
+//         user.password = await bcrypt.hash(password, 12);
+//       }
 
-      await user.save({ session });
-    } else {
-      const hashedPassword = await bcrypt.hash(password, 12);
+//       await user.save({ session });
+//     } else {
+//       const hashedPassword = await bcrypt.hash(password, 12);
 
-      [user] = await User.create(
-        [
-          {
-            firstName,
-            lastName,
-            email,
-            password: hashedPassword,
-            phone,
-            organizationId,
-            managerId,
-            authProvider: "local",
-            isEmailVerified: false,
-            status: "ACTIVE",
-            isActive: true,
-          },
-        ],
-        { session },
-      );
-    }
+//       [user] = await User.create(
+//         [
+//           {
+//             firstName,
+//             lastName,
+//             email,
+//             password: hashedPassword,
+//             phone,
+//             organizationId,
+//             managerId,
+//             authProvider: "local",
+//             isEmailVerified: false,
+//             status: "ACTIVE",
+//             isActive: true,
+//           },
+//         ],
+//         { session },
+//       );
+//     }
 
-    const [member] = await OrganizationMember.create(
-      [
-        {
-          organization: organizationId,
-          user: user._id,
-          roles: roleIds,
-          title,
-          department,
-          employeeId,
-          status: "ACTIVE",
-          joinedAt: new Date(),
-          invitedBy: actorUserId,
-          invitedAt: new Date(),
-          acceptedAt: new Date(),
-          createdBy: actorUserId,
-          updatedBy: actorUserId,
-        },
-      ],
-      { session },
-    );
+//     const [member] = await OrganizationMember.create(
+//       [
+//         {
+//           organization: organizationId,
+//           user: user._id,
+//           roles: roleIds,
+//           title,
+//           department,
+//           employeeId,
+//           status: "ACTIVE",
+//           joinedAt: new Date(),
+//           invitedBy: actorUserId,
+//           invitedAt: new Date(),
+//           acceptedAt: new Date(),
+//           createdBy: actorUserId,
+//           updatedBy: actorUserId,
+//         },
+//       ],
+//       { session },
+//     );
 
-    await session.commitTransaction();
+//     await session.commitTransaction();
 
-    return await getMemberByIdForOrganization({
-      memberId: member._id,
-      organizationId,
-    });
-  } catch (error) {
-    await session.abortTransaction();
+//     return await getMemberByIdForOrganization({
+//       memberId: member._id,
+//       organizationId,
+//     });
+//   } catch (error) {
+//     await session.abortTransaction();
 
-    if (error?.code === 11000) {
-      throw new ApiError(409, "Duplicate user or member data detected");
-    }
+//     if (error?.code === 11000) {
+//       throw new ApiError(409, "Duplicate user or member data detected");
+//     }
 
-    if (error instanceof ApiError) {
-      throw error;
-    }
+//     if (error instanceof ApiError) {
+//       throw error;
+//     }
 
-    throw new ApiError(500, error.message || "Failed to create member");
-  } finally {
-    session.endSession();
-  }
-};
+//     throw new ApiError(500, error.message || "Failed to create member");
+//   } finally {
+//     session.endSession();
+//   }
+// };
 
 /* -------------------------------------------------------------------------- */
 /*                            Get member by id                                */
