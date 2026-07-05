@@ -80,6 +80,25 @@ const organizationMemberSchema = new Schema(
       default: null,
     },
 
+    // ---------------- INVITE FLOW FIELDS ----------------
+    inviteToken: {
+      type: String,
+      default: null,
+      select: false,
+      index: true,
+    },
+
+    inviteTokenExpiresAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    inviteAcceptedAt: {
+      type: Date,
+      default: null,
+    },
+
     metadata: {
       type: Map,
       of: Schema.Types.Mixed,
