@@ -13,12 +13,12 @@ const userSchema = new Schema(
       index: true,
     },
 
-    roleId: {
-      type: Schema.Types.ObjectId,
-      ref: "Role",
-      default: null,
-      index: true,
-    },
+    // roleId: {
+    //   type: Schema.Types.ObjectId,
+    //   ref: "Role",
+    //   default: null,
+    //   index: true,
+    // },
 
     managerId: {
       type: Schema.Types.ObjectId,

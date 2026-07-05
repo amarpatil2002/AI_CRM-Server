@@ -1,15 +1,20 @@
-import Role from "../models/roleModel.js";
-import Permission from "../models/permissionModel.js";
-import ApiError from "../utils/apiError.js";
+import Role from "../../models/roleModel.js";
+import Permission from "../../models/permissionModel.js";
+import ApiError from "../../utils/ApiError.js";
 import {
   DEFAULT_ROLE_DEFINITIONS,
   SYSTEM_ROLE_NAMES,
-} from "../utils/defaultRoles.js";
+} from "../../utils/defaultRoles.js";
 
-export const createDefaultRolesForOrganization = async (
+const toRoleCode = (roleName) => {
+  return String(roleName).trim().toLowerCase().replace(/\s+/g, "_");
+};
+
+export const createDefaultRolesForOrganization = async ({
   organizationId,
+  actorUserId = null,
   session = null,
-) => {
+}) => {
   if (!organizationId) {
     throw new ApiError(
       400,
@@ -19,7 +24,6 @@ export const createDefaultRolesForOrganization = async (
 
   const roleNames = Object.keys(DEFAULT_ROLE_DEFINITIONS);
 
-  // Get all permission keys used by all roles
   const requiredPermissionKeys = [
     ...new Set(
       roleNames.flatMap(
@@ -31,7 +35,9 @@ export const createDefaultRolesForOrganization = async (
   const permissions = await Permission.find({
     key: { $in: requiredPermissionKeys },
     isActive: true,
-  }).select("_id key");
+  })
+    .select("_id key")
+    .session(session);
 
   const permissionMap = new Map(
     permissions.map((permission) => [permission.key, permission._id]),
@@ -48,17 +54,22 @@ export const createDefaultRolesForOrganization = async (
     );
   }
 
-  const rolesToCreate = roleNames.map((roleName) => {
+  const rolesToCreate = roleNames.map((roleName, index) => {
     const roleConfig = DEFAULT_ROLE_DEFINITIONS[roleName];
 
     return {
-      organizationId,
+      organization: organizationId,
       name: roleName,
+      code: toRoleCode(roleName),
       description: roleConfig.description,
       permissions: roleConfig.permissions.map((key) => permissionMap.get(key)),
       accessScope: roleConfig.accessScope,
       isSystem: true,
-      isActive: true,
+      isDefault: roleName === SYSTEM_ROLE_NAMES.OWNER,
+      priority: 100 - index,
+      status: "ACTIVE",
+      createdBy: actorUserId,
+      updatedBy: actorUserId,
     };
   });
 
@@ -81,3 +92,5 @@ export const createDefaultRolesForOrganization = async (
     salesRepRole: roleMap[SYSTEM_ROLE_NAMES.SALES_REP],
   };
 };
+
+export default createDefaultRolesForOrganization;

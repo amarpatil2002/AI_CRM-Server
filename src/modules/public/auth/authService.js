@@ -6,8 +6,9 @@ import { verifyEmailOtpTemplate } from "../../../utils/emailTemplates.js";
 import mongoose from "mongoose";
 import User from "../../../models/userModel.js";
 import Organization from "../../../models/orgnizationModel.js";
+import OrganizationMember from "../../../models/organizationMemberModel.js";
 import ApiError from "../../../utils/apiError.js";
-import { createDefaultRolesForOrganization } from "../../../helpers/createDefaultRolesForOrganization.js";
+import { createDefaultRolesForOrganization } from "../../../service/auth/createDefaultRolesForOrganization.js";
 
 /* -------------------------------------------------------------------------- */
 /*                               HELPER FUNCTIONS                             */
@@ -136,9 +137,10 @@ const sendVerificationOtpEmail = async ({ email, firstName, otp }) => {
 
 export const registerUser = async (payload) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
 
   try {
+    session.startTransaction();
+
     let { firstName, lastName, email, password, organizationName, phone } =
       payload;
 
@@ -164,7 +166,7 @@ export const registerUser = async (payload) => {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create organization first
+    // 1) create organization first
     const slug = await generateOrganizationSlug(organizationName, session);
 
     const [organization] = await Organization.create(
@@ -183,21 +185,22 @@ export const registerUser = async (payload) => {
       { session },
     );
 
-    // Create default roles for this organization
-    const { ownerRole } = await createDefaultRolesForOrganization(
-      organization._id,
+    // 2) create default roles for this organization
+    const { ownerRole } = await createDefaultRolesForOrganization({
+      organizationId: organization._id,
+      actorUserId: null,
       session,
-    );
+    });
 
-    if (!ownerRole) {
+    if (!ownerRole?._id) {
       throw new ApiError(500, "Owner role could not be created");
     }
 
-    // Generate email OTP
+    // 3) generate email OTP
     const rawOtp = generateEmailOtp();
     const hashedOtp = hashOtp(rawOtp);
 
-    // Create first user as OWNER of organization
+    // 4) create first user as OWNER of organization
     const [user] = await User.create(
       [
         {
@@ -205,12 +208,15 @@ export const registerUser = async (payload) => {
           lastName,
           email,
           password: hashedPassword,
-          phone,
-          organizationId: organization._id,
-          roleId: ownerRole._id,
+          phone: phone || null,
+
+          organizationId: organization._id, // convenience field
+          roleId: ownerRole._id, // convenience field
+
           isEmailVerified: false,
           isActive: true,
           authProvider: "local",
+
           emailVerificationOtp: hashedOtp,
           emailVerificationOtpExpires: getEmailOtpExpiryDate(),
           emailVerificationOtpAttempts: 0,
@@ -220,13 +226,31 @@ export const registerUser = async (payload) => {
       { session },
     );
 
-    // Update organization owner
+    // 5) create OWNER membership  <-- THIS WAS MISSING
+    const [membership] = await OrganizationMember.create(
+      [
+        {
+          organization: organization._id,
+          user: user._id,
+          roles: [ownerRole._id],
+          status: "ACTIVE",
+          joinedAt: new Date(),
+          acceptedAt: new Date(),
+          createdBy: user._id,
+          updatedBy: user._id,
+        },
+      ],
+      { session },
+    );
+
+    // 6) update organization owner
     organization.owner = user._id;
     await organization.save({ session });
 
     await session.commitTransaction();
     session.endSession();
 
+    // 7) send OTP after successful commit
     try {
       await sendVerificationOtpEmail({
         email: user.email,
@@ -241,6 +265,7 @@ export const registerUser = async (payload) => {
       message:
         "Registration successful. Please verify your email using the OTP sent to your inbox.",
       requiresEmailVerification: true,
+
       user: {
         _id: user._id,
         firstName: user.firstName,
@@ -250,10 +275,19 @@ export const registerUser = async (payload) => {
         organizationId: user.organizationId,
         roleId: user.roleId,
       },
+
       organization: {
         _id: organization._id,
         name: organization.name,
         slug: organization.slug,
+      },
+
+      membership: {
+        _id: membership._id,
+        organization: membership.organization,
+        user: membership.user,
+        roles: membership.roles,
+        status: membership.status,
       },
     };
   } catch (error) {
@@ -267,6 +301,13 @@ export const registerUser = async (payload) => {
 
       if (error.keyPattern?.slug) {
         throw new ApiError(409, "Organization slug already exists");
+      }
+
+      if (error.keyPattern?.organization && error.keyPattern?.user) {
+        throw new ApiError(
+          409,
+          "Organization membership already exists for this user",
+        );
       }
     }
 
