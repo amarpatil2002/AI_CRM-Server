@@ -150,6 +150,13 @@ const userSchema = new Schema(
       index: true,
     },
 
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+
+    deletedAt: Date,
+
     refreshToken: {
       type: String,
       default: null,
