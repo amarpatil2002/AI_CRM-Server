@@ -1,13 +1,13 @@
 import { Router } from "express";
-import { protect } from "../../../middlewares/auth.middleware.js";
-import { authorize } from "../../../middlewares/authorize.middleware.js";
+import { protect } from "../../../middleware/authMiddleware.js";
+import { authorize } from "../../../middleware/authorizeMiddlware.js";
 import {
   getRoles,
   createRole,
   getRoleById,
   updateRole,
   deleteRole,
-} from "./role.controller.js";
+} from "./roleController.js";
 
 const router = Router();
 

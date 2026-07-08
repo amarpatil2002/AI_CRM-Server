@@ -3,7 +3,11 @@ import {
   PERMISSIONS,
   PERMISSION_GROUPS,
   ALL_PERMISSIONS,
-} from "../utils/permission.js";
+} from "./permission.js";
+import {
+  SYSTEM_ROLE_CODES,
+  SYSTEM_ROLE_NAMES,
+} from "../modules/crm/role/roleConstant.js";
 
 const {
   ORGANIZATION,
@@ -23,15 +27,10 @@ const {
   AI,
 } = PERMISSION_GROUPS;
 
-export const SYSTEM_ROLE_NAMES = {
-  OWNER: "OWNER",
-  ADMIN: "ADMIN",
-  MANAGER: "MANAGER",
-  SALES_REP: "SALES_REP",
-};
-
 export const DEFAULT_ROLE_DEFINITIONS = {
-  [SYSTEM_ROLE_NAMES.OWNER]: {
+  [SYSTEM_ROLE_CODES.OWNER]: {
+    name: SYSTEM_ROLE_NAMES.OWNER,
+    code: SYSTEM_ROLE_CODES.OWNER,
     description: "Full access to the organization and all CRM resources",
     permissions: [...ALL_PERMISSIONS],
     accessScope: {
@@ -45,9 +44,14 @@ export const DEFAULT_ROLE_DEFINITIONS = {
       user: ACCESS_SCOPE.ALL,
       report: ACCESS_SCOPE.ALL,
     },
+    isSystem: true,
+    isDefault: true,
+    priority: 100,
   },
 
-  [SYSTEM_ROLE_NAMES.ADMIN]: {
+  [SYSTEM_ROLE_CODES.ADMIN]: {
+    name: SYSTEM_ROLE_NAMES.ADMIN,
+    code: SYSTEM_ROLE_CODES.ADMIN,
     description: "Administrative access to users, CRM modules, and reporting",
     permissions: [
       ...ORGANIZATION.filter((key) => key !== PERMISSIONS.ORG_BILLING_UPDATE),
@@ -77,9 +81,14 @@ export const DEFAULT_ROLE_DEFINITIONS = {
       user: ACCESS_SCOPE.ALL,
       report: ACCESS_SCOPE.ALL,
     },
+    isSystem: true,
+    isDefault: false,
+    priority: 90,
   },
 
-  [SYSTEM_ROLE_NAMES.MANAGER]: {
+  [SYSTEM_ROLE_CODES.MANAGER]: {
+    name: SYSTEM_ROLE_NAMES.MANAGER,
+    code: SYSTEM_ROLE_CODES.MANAGER,
     description:
       "Team manager with team-wide visibility and assignment abilities",
     permissions: [
@@ -154,9 +163,14 @@ export const DEFAULT_ROLE_DEFINITIONS = {
       user: ACCESS_SCOPE.TEAM,
       report: ACCESS_SCOPE.TEAM,
     },
+    isSystem: true,
+    isDefault: false,
+    priority: 80,
   },
 
-  [SYSTEM_ROLE_NAMES.SALES_REP]: {
+  [SYSTEM_ROLE_CODES.SALES_REP]: {
+    name: SYSTEM_ROLE_NAMES.SALES_REP,
+    code: SYSTEM_ROLE_CODES.SALES_REP,
     description:
       "Sales representative with day-to-day CRM access for owned records",
     permissions: [
@@ -213,5 +227,8 @@ export const DEFAULT_ROLE_DEFINITIONS = {
       user: ACCESS_SCOPE.OWN,
       report: ACCESS_SCOPE.OWN,
     },
+    isSystem: true,
+    isDefault: false,
+    priority: 70,
   },
 };
