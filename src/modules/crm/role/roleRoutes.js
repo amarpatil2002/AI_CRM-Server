@@ -7,10 +7,12 @@ import {
   getRoleById,
   updateRole,
   deleteRole,
+  getPermissions,
 } from "./roleController.js";
 
 const router = Router();
 
+router.get("/permission", protect, getPermissions);
 router.get("/", protect, authorize("role:read"), getRoles);
 router.post("/", protect, authorize("role:create"), createRole);
 router.get("/:roleId", protect, authorize("role:read"), getRoleById);

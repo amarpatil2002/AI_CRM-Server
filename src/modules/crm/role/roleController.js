@@ -5,6 +5,7 @@ import {
   getRoleByIdService,
   getRolesService,
   updateRoleService,
+  getPermissionsService,
 } from "./roleService.js";
 
 const resolveOrganizationId = (req) => {
@@ -38,6 +39,20 @@ export const getRoles = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: "Roles fetched successfully",
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getPermissions = async (req, res, next) => {
+  try {
+    const data = await getPermissionsService();
+
+    return res.status(200).json({
+      success: true,
+      message: "Permissions fetched successfully",
       data,
     });
   } catch (error) {
