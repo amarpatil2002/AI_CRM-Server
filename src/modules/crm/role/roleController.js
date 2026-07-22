@@ -24,16 +24,20 @@ export const getRoles = async (req, res, next) => {
   try {
     const organizationId = resolveOrganizationId(req);
 
+    console.log(req.body);
+
     if (!organizationId) {
       return res.status(400).json({
         success: false,
         message: "Organization id is required",
       });
     }
-
     const data = await getRolesService({
-      organizationId,
+      organizationId: req.user.organizationId,
+
       query: req.query,
+
+      currentUserPermissions: req.user.permissions,
     });
 
     return res.status(200).json({

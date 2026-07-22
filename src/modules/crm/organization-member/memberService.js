@@ -38,7 +38,7 @@ const buildMemberPopulation = () => [
       "_id firstName lastName email phone avatar status isActive organizationId managerId",
   },
   {
-    path: "roles",
+    path: "role",
     select:
       "_id name code description status isDefault isSystem priority accessScope",
   },
@@ -92,24 +92,22 @@ const getMemberByIdForOrganization = async ({
 /**
  * Validate that all role ids belong to the same organization
  */
-const validateRoleIdsForOrganization = async ({
-  roleIds = [],
+const validateRoleForOrganization = async ({
+  roleId,
   organizationId,
   session = null,
 }) => {
-  const uniqueRoleIds = [...new Set(roleIds.map(String))];
-
-  if (!uniqueRoleIds.length) {
-    throw new ApiError(400, "At least one role is required");
+  if (!roleId) {
+    throw new ApiError(400, "Role is required");
   }
 
-  let query = Role.find({
-    _id: { $in: uniqueRoleIds },
+  let query = Role.findOne({
+    _id: roleId,
     status: "ACTIVE",
     isDeleted: false,
     $or: [
-      { organization: null }, // global roles
-      { organization: organizationId }, // org custom roles
+      { organization: null }, // Global role
+      { organization: organizationId }, // Organization role
     ],
   }).select("_id name code isDefault isSystem");
 
@@ -117,25 +115,24 @@ const validateRoleIdsForOrganization = async ({
     query = query.session(session);
   }
 
-  const roles = await query;
+  const role = await query;
+  console.log(role);
 
-  if (roles.length !== uniqueRoleIds.length) {
+  if (!role) {
     throw new ApiError(
       400,
-      "One or more roles are invalid or do not belong to this organization",
+      "The selected role is invalid or does not belong to this organization",
     );
   }
 
-  const hasOwnerRole = roles.some((role) => role.code === "owner");
-
-  if (hasOwnerRole) {
+  if (role.code === "owner") {
     throw new ApiError(
       403,
-      "OWNER role cannot be assigned through member management. Use ownership transfer flow instead.",
+      "OWNER role cannot be assigned through member management. Use the ownership transfer flow instead.",
     );
   }
 
-  return roles;
+  return role;
 };
 
 /**
@@ -234,7 +231,7 @@ const ensureNotLastOwnerRemoval = async ({
     organization: organizationId,
     isDeleted: false,
   }).populate({
-    path: "roles",
+    path: "role",
     select: "_id code name status isDefault isSystem",
   });
 
@@ -248,7 +245,7 @@ const ensureNotLastOwnerRemoval = async ({
     throw new ApiError(404, "Member not found");
   }
 
-  const memberHasOwnerRole = (member.roles || []).some(
+  const memberHasOwnerRole = (member.role || []).some(
     (role) => role?.code === "owner",
   );
 
@@ -271,7 +268,7 @@ const ensureNotLastOwnerRemoval = async ({
     organization: organizationId,
     isDeleted: false,
     status: "ACTIVE",
-    roles: { $in: ownerRoleIds },
+    role: { $in: ownerRoleIds },
   }).session(session);
 
   const actionRemovesOwnerRole =
@@ -307,7 +304,7 @@ const buildListFilter = ({ organizationId, status, roleId }) => {
   }
 
   if (roleId) {
-    filter.roles = roleId;
+    filter.role = roleId;
   }
 
   return filter;
@@ -443,14 +440,14 @@ export const inviteOrganizationMember = async ({
     const department = sanitizeNullableString(payload.department);
     const employeeId = sanitizeNullableString(payload.employeeId);
     const managerId = payload.managerId || null;
-    const roleIds = [...new Set((payload.roles || []).map(String))];
+    const roleId = payload.role.trim();
 
     if (!firstName || !lastName || !email) {
       throw new ApiError(400, "First name, last name and email are required");
     }
 
-    await validateRoleIdsForOrganization({
-      roleIds,
+    await validateRoleForOrganization({
+      roleId,
       organizationId,
       session,
     });
@@ -520,7 +517,7 @@ export const inviteOrganizationMember = async ({
         {
           organization: organizationId,
           user: user._id,
-          roles: roleIds,
+          role: roleId,
           title,
           department,
           employeeId,
@@ -713,7 +710,7 @@ export const getInviteByToken = async ({ token }) => {
       select: "_id firstName lastName email",
     })
     .populate({
-      path: "roles",
+      path: "role",
       select: "_id name code",
       match: {
         status: "ACTIVE",
@@ -750,11 +747,7 @@ export const getInviteByToken = async ({ token }) => {
       name: member.organization.name,
       slug: member.organization.slug,
     },
-    roles: (member.roles || []).map((role) => ({
-      _id: role._id,
-      name: role.name,
-      code: role.code,
-    })),
+    role: member.role,
   };
 };
 
@@ -854,163 +847,6 @@ export const acceptOrganizationInvite = async ({
     session.endSession();
   }
 };
-
-/* -------------------------------------------------------------------------- */
-/*                               Create member                                */
-/* -------------------------------------------------------------------------- */
-
-// export const createOrganizationMember = async ({
-//   organizationId,
-//   actorUserId,
-//   payload,
-// }) => {
-//   if (!organizationId) {
-//     throw new ApiError(400, "Organization id is required");
-//   }
-
-//   const session = await mongoose.startSession();
-//   session.startTransaction();
-
-//   try {
-//     const firstName = payload.firstName?.trim();
-//     const lastName = payload.lastName?.trim();
-//     const email = normalizeEmail(payload.email);
-//     const password = payload.password;
-//     const phone = sanitizeNullableString(payload.phone);
-//     const title = sanitizeNullableString(payload.title);
-//     const department = sanitizeNullableString(payload.department);
-//     const employeeId = sanitizeNullableString(payload.employeeId);
-//     const managerId = payload.managerId || null;
-//     const roleIds = [...new Set((payload.roles || []).map(String))];
-
-//     if (!firstName || !lastName || !email || !password) {
-//       throw new ApiError(
-//         400,
-//         "First name, last name, email and password are required",
-//       );
-//     }
-
-//     if (password.length < 8) {
-//       throw new ApiError(400, "Password must be at least 8 characters long");
-//     }
-
-//     await validateRoleIdsForOrganization({
-//       roleIds,
-//       organizationId,
-//       session,
-//     });
-
-//     await validateManagerForOrganization({
-//       managerId,
-//       organizationId,
-//       session,
-//     });
-
-//     let user = await User.findOne({ email }).session(session);
-
-//     if (user) {
-//       ensureUserCanBelongToOrganization({ user, organizationId });
-
-//       await ensureNoDuplicateMembership({
-//         organizationId,
-//         userId: user._id,
-//         session,
-//       });
-
-//       if (!user.organizationId) {
-//         user.organizationId = organizationId;
-//       }
-
-//       if (managerId !== null) {
-//         user.managerId = managerId;
-//       }
-
-//       if (phone && !user.phone) {
-//         user.phone = phone;
-//       }
-
-//       if (!user.firstName) user.firstName = firstName;
-//       if (!user.lastName) user.lastName = lastName;
-
-//       /**
-//        * If user exists but has no password (rare case), allow setting it.
-//        * If user already has a password, we do not overwrite it from this endpoint.
-//        */
-//       if (!user.password) {
-//         user.password = await bcrypt.hash(password, 12);
-//       }
-
-//       await user.save({ session });
-//     } else {
-//       const hashedPassword = await bcrypt.hash(password, 12);
-
-//       [user] = await User.create(
-//         [
-//           {
-//             firstName,
-//             lastName,
-//             email,
-//             password: hashedPassword,
-//             phone,
-//             organizationId,
-//             managerId,
-//             authProvider: "local",
-//             isEmailVerified: false,
-//             status: "ACTIVE",
-//             isActive: true,
-//           },
-//         ],
-//         { session },
-//       );
-//     }
-
-//     const [member] = await OrganizationMember.create(
-//       [
-//         {
-//           organization: organizationId,
-//           user: user._id,
-//           roles: roleIds,
-//           title,
-//           department,
-//           employeeId,
-//           status: "ACTIVE",
-//           joinedAt: new Date(),
-//           invitedBy: actorUserId,
-//           invitedAt: new Date(),
-//           acceptedAt: new Date(),
-//           createdBy: actorUserId,
-//           updatedBy: actorUserId,
-//         },
-//       ],
-//       { session },
-//     );
-
-//     await session.commitTransaction();
-
-//     return await getMemberByIdForOrganization({
-//       memberId: member._id,
-//       organizationId,
-//     });
-//   } catch (error) {
-//     await session.abortTransaction();
-
-//     if (error?.code === 11000) {
-//       throw new ApiError(409, "Duplicate user or member data detected");
-//     }
-
-//     if (error instanceof ApiError) {
-//       throw error;
-//     }
-
-//     throw new ApiError(500, error.message || "Failed to create member");
-//   } finally {
-//     session.endSession();
-//   }
-// };
-
-/* -------------------------------------------------------------------------- */
-/*                            Get member by id                                */
-/* -------------------------------------------------------------------------- */
 
 export const getOrganizationMemberById = async ({
   organizationId,
@@ -1141,10 +977,10 @@ export const updateOrganizationMemberRoles = async ({
   session.startTransaction();
 
   try {
-    const roleIds = [...new Set((payload.roles || []).map(String))];
+    const roleId = payload.role.trim();
 
     await validateRoleIdsForOrganization({
-      roleIds,
+      roleId,
       organizationId,
       session,
     });
@@ -1152,7 +988,7 @@ export const updateOrganizationMemberRoles = async ({
     await ensureNotLastOwnerRemoval({
       organizationId,
       memberId,
-      nextRoleIds: roleIds,
+      nextRoleIds: roleId,
       session,
     });
 
@@ -1166,7 +1002,7 @@ export const updateOrganizationMemberRoles = async ({
       throw new ApiError(404, "Member not found");
     }
 
-    member.roles = roleIds;
+    member.role = roleId;
     member.updatedBy = actorUserId;
 
     await member.save({ session });

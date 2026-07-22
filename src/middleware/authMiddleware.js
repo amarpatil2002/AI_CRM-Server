@@ -19,16 +19,16 @@ const getTokenFromRequest = (req) => {
   return token;
 };
 
-const normalizePermissionKeys = (roles = []) => {
+const normalizePermissionKeys = (role) => {
+  if (!role || role.status !== "ACTIVE" || role.isDeleted) {
+    return [];
+  }
+
   const permissionSet = new Set();
 
-  for (const role of roles) {
-    if (!role || role.status !== "ACTIVE" || role.isDeleted) continue;
-
-    for (const permission of role.permissions || []) {
-      if (!permission || !permission.key) continue;
-      permissionSet.add(permission.key);
-    }
+  for (const permission of role.permissions || []) {
+    if (!permission?.key) continue;
+    permissionSet.add(permission.key);
   }
 
   return [...permissionSet];
@@ -68,7 +68,7 @@ export const protect = async (req, res, next) => {
         select: "_id name slug status owner isDeleted",
       })
       .populate({
-        path: "roles",
+        path: "role",
         match: {
           status: "ACTIVE",
           isDeleted: false,
@@ -104,11 +104,11 @@ export const protect = async (req, res, next) => {
       );
     }
 
-    if (!member.roles || member.roles.length === 0) {
-      return next(new ApiError(403, "No active roles assigned to this user"));
+    if (!member.role) {
+      return next(new ApiError(403, "No active role assigned to this user"));
     }
 
-    const permissionKeys = normalizePermissionKeys(member.roles);
+    const permissionKeys = normalizePermissionKeys(member.role);
 
     req.user = {
       _id: user._id,
@@ -127,9 +127,9 @@ export const protect = async (req, res, next) => {
       memberId: member._id,
       memberStatus: member.status,
 
-      roleIds: member.roles.map((role) => role._id),
-      roleNames: member.roles.map((role) => role.name),
-      roleCodes: member.roles.map((role) => role.code),
+      roleId: member.role._id,
+      roleName: member.role.name,
+      roleCode: member.role.code,
 
       permissions: permissionKeys,
 

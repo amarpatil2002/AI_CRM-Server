@@ -18,13 +18,11 @@ const organizationMemberSchema = new Schema(
       index: true,
     },
 
-    roles: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: "Role",
-        required: true,
-      },
-    ],
+    role: {
+      type: Schema.Types.ObjectId,
+      ref: "Role",
+      required: true,
+    },
 
     title: {
       type: String,
@@ -144,7 +142,7 @@ organizationMemberSchema.index({ organization: 1, user: 1 }, { unique: true });
  */
 organizationMemberSchema.index({ organization: 1, status: 1 });
 organizationMemberSchema.index({ user: 1, status: 1 });
-organizationMemberSchema.index({ organization: 1, roles: 1 });
+organizationMemberSchema.index({ organization: 1, role: 1 });
 organizationMemberSchema.index({ createdAt: -1 });
 
 /**

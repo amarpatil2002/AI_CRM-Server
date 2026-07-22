@@ -45,7 +45,7 @@ router.post(
   "/invite",
   protect,
   authorize("user:invite"),
-  validate(inviteOrganizationMemberSchema),
+  // validate(inviteOrganizationMemberSchema),
   inviteOrganizationMember,
 );
 
@@ -95,7 +95,7 @@ router.patch(
 );
 
 router.patch(
-  "/:memberId/roles",
+  "/:memberId/role",
   protect,
   authorize("role:update"),
   validate(updateOrganizationMemberRolesSchema),

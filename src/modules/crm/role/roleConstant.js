@@ -14,16 +14,10 @@ export const MEMBER_STATUS = {
 
 export const SYSTEM_ROLE_CODES = {
   OWNER: "owner",
-  ADMIN: "admin",
-  MANAGER: "manager",
-  SALES_REP: "sales_rep",
 };
 
 export const SYSTEM_ROLE_NAMES = {
   OWNER: "OWNER",
-  ADMIN: "ADMIN",
-  MANAGER: "MANAGER",
-  SALES_REP: "SALES_REP",
 };
 
 export const RESERVED_ROLE_CODES = Object.values(SYSTEM_ROLE_CODES);
@@ -47,4 +41,19 @@ export const DEFAULT_ACCESS_SCOPE = {
   report: ACCESS_SCOPE.OWN,
 };
 
-export const SCOPED_ROLE_MODULES = Object.keys(DEFAULT_ACCESS_SCOPE);
+export const SCOPED_ROLE_MODULES = [
+  "org",
+  "user",
+  "role",
+  "lead",
+  "contact",
+  "account",
+  "deal",
+  "task",
+  "note",
+  "meeting",
+  "pipeline",
+  "report",
+  "notification",
+  "activity",
+];

@@ -14,6 +14,7 @@ import {
   validateObjectId,
   validateUpdateRolePayload,
 } from "./roleValidation.js";
+import { PERMISSIONS } from "../../../utils/permission.js";
 
 /* -------------------------------------------------------
  * helpers
@@ -171,7 +172,7 @@ const ensureRoleCanBeDeleted = async ({ role, organizationId }) => {
 
   const assignedCount = await OrganizationMember.countDocuments({
     organization: organizationId,
-    roles: role._id,
+    role: role._id,
     status: { $in: [MEMBER_STATUS.ACTIVE, MEMBER_STATUS.INVITED] },
     isDeleted: false,
   });
@@ -219,8 +220,16 @@ const getPermissionDocsByKeys = async (permissionKeys = []) => {
 /**
  * GET ROLES
  */
-export const getRolesService = async ({ organizationId, query }) => {
+
+export const getRolesService = async ({
+  organizationId,
+  query,
+  currentUserPermissions,
+}) => {
+  console.log(query);
   const normalizedQuery = normalizeRoleListQuery(query);
+
+  console.log(normalizedQuery);
 
   const filter = buildRoleListFilter({
     organizationId,
@@ -241,34 +250,81 @@ export const getRolesService = async ({ organizationId, query }) => {
       .skip(normalizedQuery.skip)
       .limit(normalizedQuery.limit)
       .lean(),
+
     Role.countDocuments(filter),
   ]);
 
   const items = roles.map((role) => ({
     _id: role._id,
+
     name: role.name,
+
     code: role.code,
+
     description: role.description,
+
     isSystem: role.isSystem,
+
     isDefault: role.isDefault,
+
     priority: role.priority,
+
     status: role.status,
+
     accessScope: role.accessScope,
+
     permissionCount: Array.isArray(role.permissions)
       ? role.permissions.length
       : 0,
+
     createdAt: role.createdAt,
+
     updatedAt: role.updatedAt,
+
+    meta: {
+      canView: true,
+      canEdit: currentUserPermissions.includes("role:update") && !role.isSystem,
+      canDelete:
+        currentUserPermissions.includes("role:delete") && !role.isSystem,
+    },
   }));
 
   return {
     items,
+
+    permissions: {
+      canCreateRole: currentUserPermissions.includes(PERMISSIONS.ROLE_CREATE),
+
+      canUpdateRole: currentUserPermissions.includes(PERMISSIONS.ROLE_UPDATE),
+
+      canDeleteRole: currentUserPermissions.includes(PERMISSIONS.ROLE_DELETE),
+
+      canReadPermissions: currentUserPermissions.includes(
+        PERMISSIONS.PERMISSION_READ,
+      ),
+
+      canInviteUser: currentUserPermissions.includes(PERMISSIONS.USER_INVITE),
+
+      canCreateUser: currentUserPermissions.includes(PERMISSIONS.USER_CREATE),
+
+      canUpdateUser: currentUserPermissions.includes(PERMISSIONS.USER_UPDATE),
+
+      canDeleteUser: currentUserPermissions.includes(PERMISSIONS.USER_DELETE),
+
+      canSuspendUser: currentUserPermissions.includes(PERMISSIONS.USER_SUSPEND),
+    },
+
     pagination: {
       page: normalizedQuery.page,
+
       limit: normalizedQuery.limit,
+
       total,
+
       totalPages: Math.ceil(total / normalizedQuery.limit),
+
       hasNextPage: normalizedQuery.page * normalizedQuery.limit < total,
+
       hasPrevPage: normalizedQuery.page > 1,
     },
   };

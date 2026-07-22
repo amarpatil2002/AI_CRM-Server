@@ -89,9 +89,9 @@ const normalizeAccessScope = (accessScope = {}, { partial = false } = {}) => {
   const base = partial ? {} : { ...DEFAULT_ACCESS_SCOPE };
 
   for (const [moduleName, scopeValue] of Object.entries(accessScope)) {
-    if (!SCOPED_ROLE_MODULES.includes(moduleName)) {
-      throw new ApiError(400, `Invalid accessScope module: ${moduleName}`);
-    }
+    // if (!SCOPED_ROLE_MODULES.includes(moduleName)) {
+    //   throw new ApiError(400, `Invalid accessScope module: ${moduleName}`);
+    // }
 
     if (
       !Object.values(DEFAULT_ACCESS_SCOPE).includes(scopeValue) &&

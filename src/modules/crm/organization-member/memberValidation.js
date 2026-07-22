@@ -31,11 +31,7 @@ export const inviteOrganizationMemberSchema = yup.object({
       .email("Valid email is required")
       .required("Email is required"),
     phone: yup.string().trim().nullable().optional(),
-    roles: yup
-      .array()
-      .of(objectId.required())
-      .min(1, "At least one role is required")
-      .required("Roles are required"),
+    role: yup.string().trim().required("Role are required"),
     title: yup.string().trim().nullable().optional(),
     department: yup.string().trim().nullable().optional(),
   }),
@@ -86,11 +82,7 @@ export const createOrganizationMemberSchema = yup.object({
       .email("Valid email is required")
       .required("Email is required"),
     phone: yup.string().trim().nullable().optional(),
-    roles: yup
-      .array()
-      .of(objectId.required())
-      .min(1, "At least one role is required")
-      .required("Roles are required"),
+    role: yup.string().trim().required("Role are required"),
     title: yup.string().trim().nullable().optional(),
     department: yup.string().trim().nullable().optional(),
     employeeId: yup.string().trim().nullable().optional(),
@@ -127,11 +119,7 @@ export const updateOrganizationMemberRolesSchema = yup.object({
     memberId: objectId.required("memberId is required"),
   }),
   body: yup.object({
-    roles: yup
-      .array()
-      .of(objectId.required())
-      .min(1, "At least one role is required")
-      .required("Roles are required"),
+    role: yup.string().trim().required("Role are required"),
   }),
   query: yup.object({}),
 });

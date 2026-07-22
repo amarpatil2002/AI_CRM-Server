@@ -237,7 +237,7 @@ export const registerUser = async (payload) => {
         {
           organization: organization._id,
           user: user._id,
-          roles: [ownerRole._id],
+          role: ownerRole._id,
           status: "ACTIVE",
           joinedAt: new Date(),
           acceptedAt: new Date(),
@@ -291,7 +291,7 @@ export const registerUser = async (payload) => {
         _id: membership._id,
         organization: membership.organization,
         user: membership.user,
-        roles: membership.roles,
+        role: membership.role,
         status: membership.status,
       },
     };
